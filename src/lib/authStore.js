@@ -1,138 +1,323 @@
-import { readStore, writeStore, uid } from './localStore.js'
-import { user as initialUser } from '@/data/mockData.js'
-import { colaborador, authAccounts } from '@/data/adminData.js'
-
-const USERS_KEY = 'auth.users'
-const SESSION_KEY = 'auth.session'
-const RESET_KEY = 'auth.resetTokens'
-
-async function hashPassword(password) {
-  const data = new TextEncoder().encode(password)
-  const digest = await crypto.subtle.digest('SHA-256', data)
-  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('')
-}
-
-function seedUsers() {
-  const existing = readStore(USERS_KEY, null)
-  if (existing) return existing
-  const users = [
-    {
-      id: initialUser.id,
-      account: 'candidato',
-      name: initialUser.name,
-      email: initialUser.email,
-      passwordHash: null,
-      role: 'candidato',
-      profile: initialUser,
-    },
-    {
-      id: colaborador.id || 'colab-1',
-      account: 'colaborador',
-      name: colaborador.name,
-      email: colaborador.email,
-      passwordHash: null,
-      role: colaborador.role || 'admin',
-      profile: colaborador,
-    },
-  ]
-  writeStore(USERS_KEY, users)
-  return users
-}
-
-export async function ensureSeedPasswords() {
-  const users = seedUsers()
-  let changed = false
-  for (const u of users) {
-    if (!u.passwordHash) {
-      const source = u.account === 'candidato' ? authAccounts.candidato.password : authAccounts.colaborador.password
-      u.passwordHash = await hashPassword(source)
-      changed = true
-    }
-  }
-  if (changed) writeStore(USERS_KEY, users)
-  return users
-}
+import { supabase } from './supabase.js'
+import { onlyDigits, validPhone } from './inputMasks.js'
 
 export async function signIn(email, password) {
-  const users = await ensureSeedPasswords()
-  const normalized = email.trim().toLowerCase()
-  const passwordHash = await hashPassword(password)
-  const found = users.find((u) => u.email.toLowerCase() === normalized && u.passwordHash === passwordHash)
-  if (!found) throw new Error('Credenciais inválidas.')
-  const session = { userId: found.id, account: found.account, role: found.role, createdAt: new Date().toISOString() }
-  writeStore(SESSION_KEY, session)
-  return { ...found.profile, id: found.id, email: found.email, account: found.account, role: found.role }
-}
+  const normalizedEmail = email.trim().toLowerCase()
 
-export async function signUpCandidate({ name, email, password }) {
-  const users = await ensureSeedPasswords()
-  const normalized = email.trim().toLowerCase()
-  if (users.some((u) => u.email.toLowerCase() === normalized)) throw new Error('Este e-mail já está cadastrado.')
-  const id = uid('cand')
-  const passwordHash = await hashPassword(password)
-  const profile = {
-    ...initialUser,
-    id,
-    name,
-    email: normalized,
-    phone: '', birthDate: '', gender: '', pcdOption: 'Não', cep: '', address: '', city: '', state: '',
-    title: '', desiredSalary: '', availability: 'Imediata', workPreference: 'Não definido',
-    nationality: 'Brasileira', cpf: '', neighborhood: '', number: '', complement: '',
-    summary: '', linkedin: '', portfolioUrl: '', profileProgress: 15, profileMissingHint: 'Complete seus dados pessoais para avançar.',
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: normalizedEmail,
+    password,
+  })
+
+  if (error) {
+    throw new Error('E-mail ou senha inválidos.')
   }
-  users.push({ id, account: 'candidato', name, email: normalized, passwordHash, role: 'candidato', profile })
-  writeStore(USERS_KEY, users)
-  const session = { userId: id, account: 'candidato', role: 'candidato', createdAt: new Date().toISOString() }
-  writeStore(SESSION_KEY, session)
-  return { ...profile, account: 'candidato', role: 'candidato' }
+
+  if (!data.user) {
+    throw new Error('Não foi possível identificar o usuário.')
+  }
+
+  const { data: usuario, error: usuarioError } = await supabase
+    .from('usuarios')
+    .select('*')
+    .eq('auth_user_id', data.user.id)
+    .single()
+
+  if (usuarioError) {
+    console.error(usuarioError)
+    throw new Error('Usuário autenticado, mas o cadastro não foi encontrado.')
+  }
+
+  return {
+    id: usuario.id,
+    auth_user_id: data.user.id,
+    name: usuario.nome,
+    email: usuario.email,
+    account: 'candidato',
+    usuario,
+  }
 }
 
-export function getSession() {
-  return readStore(SESSION_KEY, null)
+export async function signUpCandidate({
+  name,
+  email,
+  password,
+}) {
+  const normalizedEmail = email.trim().toLowerCase()
+
+  const { data, error } = await supabase.auth.signUp({
+    email: normalizedEmail,
+    password,
+    options: {
+      data: {
+        name: name.trim(),
+      },
+    },
+  })
+
+  if (error) {
+    if (error.message.toLowerCase().includes('already registered')) {
+      throw new Error('Este e-mail já está cadastrado.')
+    }
+
+    throw new Error(error.message)
+  }
+
+  if (!data.user) {
+    throw new Error('Não foi possível criar a conta.')
+  }
+
+  if (!data.session) {
+    throw new Error(
+      'Conta criada! Verifique seu e-mail para confirmar a conta e depois faça o login.'
+    )
+  }
+
+  return {
+    id: data.user.id,
+    auth_user_id: data.user.id,
+    name: name.trim(),
+    email: normalizedEmail,
+    account: 'candidato',
+  }
+}
+
+export async function getSession() {
+  const { data, error } = await supabase.auth.getSession()
+
+  if (error) {
+    console.error(error)
+    return null
+  }
+
+  return data.session
 }
 
 export async function getCurrentUser() {
-  const session = getSession()
-  if (!session) return null
-  const users = await ensureSeedPasswords()
-  const found = users.find((u) => u.id === session.userId)
-  return found ? { ...found.profile, id: found.id, email: found.email, account: found.account, role: found.role } : null
+  const session = await getSession()
+
+  if (!session?.user) {
+    return null
+  }
+
+  const { data: usuario, error } = await supabase
+    .from('usuarios')
+    .select('*')
+    .eq('auth_user_id', session.user.id)
+    .single()
+
+  if (error) {
+    console.error(error)
+    return null
+  }
+
+  return {
+    id: usuario.id,
+    auth_user_id: session.user.id,
+    name: usuario.nome,
+    email: usuario.email,
+    account: 'candidato',
+    usuario,
+  }
 }
 
-export function signOut() {
-  localStorage.removeItem('conectarh:auth.session')
+export async function signOut() {
+  const { error } = await supabase.auth.signOut()
+
+  if (error) {
+    throw new Error('Não foi possível sair da conta.')
+  }
 }
 
-export function updateCurrentProfile(profile) {
-  const session = getSession()
-  if (!session) return
-  const users = readStore(USERS_KEY, [])
-  const index = users.findIndex((u) => u.id === session.userId)
-  if (index < 0) return
-  users[index] = { ...users[index], name: profile.name, email: profile.email, profile: { ...users[index].profile, ...profile } }
-  writeStore(USERS_KEY, users)
+/**
+ * ATUALIZA O PERFIL DO USUÁRIO
+ */
+export async function updateCurrentProfile(updates) {
+  const session = await getSession()
+
+  if (!session?.user) {
+    throw new Error('Usuário não autenticado.')
+  }
+
+  const usuarioUpdates = {}
+
+  if (updates.name !== undefined) {
+    usuarioUpdates.nome = updates.name
+  }
+
+  let emailChangePending = false
+  if (updates.email !== undefined && updates.email.trim().toLowerCase() !== session.user.email?.toLowerCase()) {
+    const requestedEmail = updates.email.trim().toLowerCase()
+    const { data, error } = await supabase.auth.updateUser({ email: requestedEmail })
+    if (error) throw new Error(error.message)
+    if (data.user?.email?.toLowerCase() === requestedEmail) {
+      usuarioUpdates.email = requestedEmail
+    } else {
+      emailChangePending = true
+    }
+  }
+
+  if (updates.phone !== undefined) {
+    if (updates.phone && !validPhone(updates.phone)) throw new Error('Informe um telefone com DDD válido.')
+    usuarioUpdates.telefone = updates.phone ? onlyDigits(updates.phone) : null
+  }
+
+  if (updates.telefone !== undefined) {
+    usuarioUpdates.telefone = updates.telefone
+  }
+
+  if (updates.cpf !== undefined) {
+    const cpf = onlyDigits(updates.cpf)
+    if (cpf && cpf.length !== 11) throw new Error('O CPF deve ter 11 dígitos.')
+    usuarioUpdates.cpf = cpf || null
+  }
+
+  if (updates.birthDate !== undefined) {
+    usuarioUpdates.data_nascimento = updates.birthDate
+  }
+
+  if (updates.data_nascimento !== undefined) {
+    usuarioUpdates.data_nascimento = updates.data_nascimento
+  }
+
+  if (Object.keys(usuarioUpdates).length === 0) {
+    return { ...(await getCurrentUser()), emailChangePending }
+  }
+
+  const { error } = await supabase
+    .from('usuarios')
+    .update(usuarioUpdates)
+    .eq('auth_user_id', session.user.id)
+
+  if (error) {
+    console.error(error)
+    throw new Error('Não foi possível atualizar o perfil.')
+  }
+
+  return { ...(await getCurrentUser()), emailChangePending }
 }
 
+/**
+ * SOLICITA RECUPERAÇÃO DE SENHA
+ */
 export async function requestPasswordReset(email) {
-  const users = await ensureSeedPasswords()
-  const normalized = email.trim().toLowerCase()
-  const found = users.find((u) => u.email.toLowerCase() === normalized)
-  if (!found) return { ok: true, token: null }
-  const token = String(Math.floor(100000 + Math.random() * 900000))
-  const tokens = readStore(RESET_KEY, [])
-  tokens.push({ id: uid('reset'), userId: found.id, token, expiresAt: Date.now() + 15 * 60 * 1000 })
-  writeStore(RESET_KEY, tokens.slice(-10))
-  return { ok: true, token }
+  const normalizedEmail = email.trim().toLowerCase()
+
+  const { error } = await supabase.auth.resetPasswordForEmail(
+    normalizedEmail,
+    {
+      redirectTo: `${window.location.origin}/`,
+    }
+  )
+
+  if (error) {
+    throw new Error(error.message)
+  }
+
+  return true
 }
 
-export async function resetPassword(email, token, newPassword) {
-  const users = await ensureSeedPasswords()
-  const tokens = readStore(RESET_KEY, [])
-  const normalized = email.trim().toLowerCase()
-  const match = tokens.find((t) => t.token === token && t.expiresAt > Date.now() && users.some((u) => u.id === t.userId && u.email.toLowerCase() === normalized))
-  if (!match) throw new Error('Token inválido ou expirado.')
-  const user = users.find((u) => u.id === match.userId)
-  user.passwordHash = await hashPassword(newPassword)
-  writeStore(USERS_KEY, users)
-  writeStore(RESET_KEY, tokens.filter((t) => t !== match))
+/**
+ * ALTERA A SENHA
+ */
+export async function resetPassword(newPassword) {
+  const { error } = await supabase.auth.updateUser({
+    password: newPassword,
+  })
+
+  if (error) {
+    throw new Error(error.message)
+  }
+
+  return true
+}
+
+/**
+ * ATUALIZA OS DADOS PROFISSIONAIS DO CANDIDATO
+ */
+export async function updateCurrentCandidate(updates) {
+  const session = await getSession()
+
+  if (!session?.user) {
+    throw new Error('Usuário não autenticado.')
+  }
+
+  const { data: usuario, error: usuarioError } = await supabase
+    .from('usuarios')
+    .select('id')
+    .eq('auth_user_id', session.user.id)
+    .single()
+
+  if (usuarioError) {
+    console.error(usuarioError)
+    throw new Error('Não foi possível localizar o usuário.')
+  }
+
+  const candidatoUpdates = {}
+
+  if (updates.title !== undefined) {
+    candidatoUpdates.cargo_atual = updates.title
+  }
+
+  if (updates.city !== undefined) {
+    candidatoUpdates.cidade = updates.city
+  }
+
+  if (updates.state !== undefined) {
+    candidatoUpdates.estado = updates.state
+  }
+
+  if (updates.desiredSalary !== undefined) {
+    const salaryText = String(updates.desiredSalary).trim()
+
+    if (!salaryText) {
+      candidatoUpdates.pretensao_salarial = null
+    } else {
+      const salaryNumber = Number(
+        salaryText
+          .replace(/[R$\s]/g, '')
+          .replace(/\./g, '')
+          .replace(',', '.')
+      )
+
+      candidatoUpdates.pretensao_salarial =
+        Number.isFinite(salaryNumber) ? salaryNumber : null
+    }
+  }
+
+  if (updates.availability !== undefined) {
+    candidatoUpdates.disponibilidade = updates.availability
+  }
+
+  if (updates.workPreference !== undefined) {
+    candidatoUpdates.modalidade = updates.workPreference
+  }
+
+  if (updates.profileProgress !== undefined) {
+    candidatoUpdates.perfil_completo = updates.profileProgress
+  }
+
+  if (updates.linkedin !== undefined) {
+    candidatoUpdates.linkedin = updates.linkedin
+  }
+
+  if (updates.portfolioUrl !== undefined) {
+    candidatoUpdates.portfolio = updates.portfolioUrl
+  }
+
+  if (Object.keys(candidatoUpdates).length === 0) {
+    return true
+  }
+
+  const { error } = await supabase
+    .from('candidatos')
+    .update(candidatoUpdates)
+    .eq('usuario_id', usuario.id)
+
+  if (error) {
+    console.error(error)
+    throw new Error('Não foi possível atualizar os dados profissionais.')
+  }
+
+  return true
 }

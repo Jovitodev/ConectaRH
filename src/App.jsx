@@ -9,6 +9,8 @@ import JobsSearch from '@/pages/JobsSearch.jsx'
 import Applications from '@/pages/Applications.jsx'
 import ProfileRegistration from '@/pages/ProfileRegistration.jsx'
 import Resume from '@/pages/Resume.jsx'
+import CandidateSettings from '@/pages/CandidateSettings.jsx'
+import CandidateSupport from '@/pages/CandidateSupport.jsx'
 import Dashboard from '@/pages/admin/Dashboard.jsx'
 import Vacancies from '@/pages/admin/Vacancies.jsx'
 import CreateVacancy from '@/pages/admin/CreateVacancy.jsx'
@@ -21,16 +23,26 @@ import Agenda from '@/pages/admin/Agenda.jsx'
 import Reports from '@/pages/admin/Reports.jsx'
 import Team from '@/pages/admin/Team.jsx'
 import Settings from '@/pages/admin/Settings.jsx'
-import { user as initialUser, jobs, initialApplications, initialResume } from '@/data/mockData.js'
+import { user as initialUser, jobs, initialApplications } from '@/data/mockData.js'
 import { colaborador as colaboradorUser } from '@/data/adminData.js'
 import { readStore, writeStore, uid } from '@/lib/localStore.js'
-import { getCurrentUser, signOut, updateCurrentProfile } from '@/lib/authStore.js'
+import { loadCandidateResume, importLocalResumes, saveResumeItem, deleteResumeItem, saveProfessionalData, savePcdProfile } from '@/lib/candidateStore.js'
+import { uploadAvatar, removeAvatar, uploadPcdPdf, removePcdPdf, signedPcdUrl } from '@/lib/profileFiles.js'
+
+import {
+  getCurrentUser,
+  signOut,
+  updateCurrentProfile,
+  updateCurrentCandidate,
+} from '@/lib/authStore.js'
 
 const candidateTabs = [
   { id: 'jobs', label: 'Buscar Vagas', icon: 'search' },
   { id: 'applications', label: 'Minhas Candidaturas', icon: 'briefcase' },
   { id: 'profile', label: 'Meu Perfil', icon: 'profile' },
-  { id: 'resumes', label: 'Currículos', icon: 'resumes', highlight: true },
+  { id: 'resumes', label: 'Meu Currículo', icon: 'resumes', highlight: true },
+  { id: 'settings', label: 'Configurações', icon: 'settings' },
+  { id: 'support', label: 'Suporte', icon: 'support' },
 ]
 
 export default function App() {
@@ -40,8 +52,9 @@ export default function App() {
   const [adminView, setAdminView] = useState('dashboard')
   const [user, setUser] = useState(initialUser)
   const [applications, setApplications] = useState(initialApplications)
-  const [resumes, setResumes] = useState([{ ...initialResume, name: initialResume.name || 'Currículo Geral', id: initialResume.id || 'resume-main' }])
-  const [activeResumeId, setActiveResumeId] = useState(initialResume.id || 'resume-main')
+  const [resume, setResume] = useState(null)
+  const [resumeLoaded, setResumeLoaded] = useState(false)
+  const [resumeOwner, setResumeOwner] = useState(null)
   const [notifications, setNotifications] = useState(3)
   const [notificationItems, setNotificationItems] = useState([])
 
@@ -50,8 +63,6 @@ export default function App() {
       if (sessionUser) {
         setAccount(sessionUser)
         setUser(sessionUser)
-        const savedResumes = readStore(`candidate.resumes.${sessionUser.id}`, null)
-        if (savedResumes?.length) { setResumes(savedResumes); setActiveResumeId(savedResumes[0].id) }
         const savedApplications = readStore(`candidate.applications.${sessionUser.id}`, null)
         if (savedApplications) setApplications(savedApplications)
         const savedNotifications = readStore(`candidate.notifications.${sessionUser.id}`, null)
@@ -62,12 +73,38 @@ export default function App() {
 
   useEffect(() => {
     if (!account?.id) return
-    writeStore(`candidate.resumes.${account.id}`, resumes)
     writeStore(`candidate.applications.${account.id}`, applications)
     writeStore(`candidate.notifications.${account.id}`, notificationItems)
-  }, [account?.id, resumes, applications, notificationItems])
+  }, [account?.id, applications, notificationItems])
 
-  const resume = resumes.find((r) => r.id === activeResumeId) || resumes[0]
+  useEffect(() => {
+    if (!account?.id) return
+    let cancelled = false
+    setResumeLoaded(false)
+    ;(async () => {
+      try {
+        let loaded = await loadCandidateResume()
+        const legacy = [
+          ...(readStore(`candidate.resumes.${account.id}`, []) || []),
+          ...(account.auth_user_id && account.auth_user_id !== account.id
+            ? readStore(`candidate.resumes.${account.auth_user_id}`, []) || []
+            : []),
+        ]
+        const marker = `candidate.resumeMigration.v2.${account.id}`
+        if (legacy?.length && !readStore(marker, false)) {
+          const skipped = await importLocalResumes(legacy, loaded.resume)
+          writeStore(marker, true)
+          loaded = await loadCandidateResume()
+          if (skipped && !cancelled) toast.warning(`${skipped} experiência(s) local(is) sem data válida ficaram na cópia do navegador.`)
+        }
+        if (!cancelled) { setUser(loaded.user); setResume(loaded.resume); setResumeOwner(account.id) }
+      } catch (error) {
+        console.error(error)
+        if (!cancelled) toast.error('Não foi possível carregar o currículo: ' + error.message)
+      } finally { if (!cancelled) setResumeLoaded(true) }
+    })()
+    return () => { cancelled = true }
+  }, [account?.id])
 
   const applyToJob = (jobId) => {
     const already = applications.find((a) => a.jobId === jobId)
@@ -76,7 +113,7 @@ export default function App() {
     if (!job) return
     const id = uid('app')
     const application = {
-      id, jobId, resumeId: activeResumeId, appliedAt: new Date().toISOString(), currentStep: 0,
+      id, jobId, resumeId: resume?.id, appliedAt: new Date().toISOString(), currentStep: 0,
       status: 'Em andamento', interviews: [], tasks: [], documents: [],
       history: [{ id: uid('history'), type: 'application', label: 'Candidatura enviada', date: new Date().toISOString(), description: `Candidatura enviada para ${job.title}.` }],
     }
@@ -110,29 +147,70 @@ export default function App() {
     setApplications((prev) => prev.map((a) => (a.id === appId ? updater(a) : a)))
   }
 
-  const handleProfileSave = ({ user: newUser, resume: newResume }) => {
-    setUser(newUser)
-    updateCurrentProfile(newUser)
-    setResumes((prev) => prev.map((r) => (r.id === activeResumeId ? newResume : r)))
+  const handleProfileSave = async (values) => {
+    let newDocumentPath = null
+    let pcdSaved = false
+    const oldDocumentPath = user.pcdDocumentPath
+    try {
+      if (values.pcd && values.pcdFile) newDocumentPath = await uploadPcdPdf(values.pcdFile)
+      const documentPath = newDocumentPath || values.documentPath
+      await savePcdProfile({ pcd: values.pcd, disabilityType: values.disabilityType, documentPath })
+      pcdSaved = true
+      const result = await updateCurrentProfile(values)
+      await updateCurrentCandidate({ linkedin: values.linkedin })
+      const loaded = await loadCandidateResume()
+      setUser(loaded.user)
+      if (newDocumentPath && oldDocumentPath && oldDocumentPath !== newDocumentPath) {
+        try { await removePcdPdf(oldDocumentPath) }
+        catch (error) { console.error('Não foi possível remover o comprovante anterior.', error) }
+      }
+      return { ...result, documentPath: loaded.user.pcdDocumentPath }
+    } catch (error) {
+      if (newDocumentPath && !pcdSaved) await removePcdPdf(newDocumentPath)
+      if (pcdSaved) {
+        try { setUser((await loadCandidateResume()).user) } catch (reloadError) { console.error(reloadError) }
+      }
+      throw error
+    }
   }
 
-  const handleResumeChange = (updater) => {
-    setResumes((prev) => prev.map((r) => (r.id === activeResumeId ? updater(r) : r)))
+  const handleUploadAvatar = async (file) => {
+    const avatar = await uploadAvatar(file)
+    setUser((previous) => ({ ...previous, avatarPath: avatar.path, photoUrl: avatar.url }))
   }
 
-  const createResume = (name = 'Novo currículo') => {
-    const newResume = { id: uid('resume'), name, summary: '', experiences: [], education: [], skills: [], languages: [], portfolio: [], certificates: [] }
-    setResumes((prev) => [...prev, newResume]); setActiveResumeId(newResume.id); toast.success('Novo currículo criado!')
+  const handleRemoveAvatar = async () => {
+    await removeAvatar()
+    setUser((previous) => ({ ...previous, avatarPath: null, photoUrl: null }))
   }
 
-  const duplicateResume = (source) => {
-    const copy = JSON.parse(JSON.stringify(source)); copy.id = uid('resume'); copy.name = `${source.name || 'Currículo'} — Cópia`
-    setResumes((prev) => [...prev, copy]); setActiveResumeId(copy.id); toast.success('Currículo duplicado!')
+  const handleOpenPcd = async (path) => {
+    const tab = window.open('', '_blank')
+    try {
+      const url = await signedPcdUrl(path)
+      if (tab) tab.location.href = url
+      else window.location.href = url
+    } catch (error) {
+      tab?.close()
+      toast.error(error.message || 'Não foi possível abrir o comprovante.')
+    }
   }
 
-  const deleteResume = (id) => {
-    if (resumes.length <= 1) { toast.error('Mantenha pelo menos um currículo.'); return }
-    setResumes((prev) => prev.filter((r) => r.id !== id)); if (activeResumeId === id) setActiveResumeId(resumes.find((r) => r.id !== id)?.id || resumes[0].id); toast.success('Currículo removido.')
+  const handleSaveProfessional = async (values) => {
+    await saveProfessionalData(values)
+    setUser((previous) => ({ ...previous, ...values }))
+  }
+
+  const handleSaveResumeItem = async (section, item) => {
+    const saved = await saveResumeItem(section, item)
+    setResume((previous) => ({ ...previous, [section]: item.id
+      ? previous[section].map((entry) => entry.id === item.id ? saved : entry)
+      : [...previous[section], saved] }))
+  }
+
+  const handleDeleteResumeItem = async (section, id) => {
+    await deleteResumeItem(section, id)
+    setResume((previous) => ({ ...previous, [section]: previous[section].filter((entry) => entry.id !== id) }))
   }
 
   const markNotificationsRead = () => {
@@ -142,6 +220,8 @@ export default function App() {
   const handleLogout = () => {
     signOut()
     setAccount(null)
+    setResume(null)
+    setResumeOwner(null)
     setActiveTab('jobs')
     setAdminView('dashboard')
   }
@@ -206,10 +286,14 @@ export default function App() {
               setStep={setStep}
             />
           )}
-          {activeTab === 'profile' && (
-            <ProfileRegistration user={user} resume={resume} onSave={handleProfileSave} />
-          )}
-          {activeTab === 'resumes' && <Resume user={user} resume={resume} resumes={resumes} activeResumeId={activeResumeId} onSelectResume={setActiveResumeId} onCreateResume={createResume} onDuplicateResume={duplicateResume} onDeleteResume={deleteResume} onChange={handleResumeChange} />}
+          {activeTab === 'profile' && (resumeLoaded && resume && resumeOwner === account.id
+            ? <ProfileRegistration key={user.id} user={user} onSave={handleProfileSave} onLogout={handleLogout} onUploadAvatar={handleUploadAvatar} onRemoveAvatar={handleRemoveAvatar} onOpenPcd={handleOpenPcd} />
+            : <p className="p-5 text-sm text-muted-foreground">Carregando perfil...</p>)}
+          {activeTab === 'resumes' && (resumeLoaded && resume && resumeOwner === account.id
+            ? <Resume user={user} resume={resume} onSaveItem={handleSaveResumeItem} onDeleteItem={handleDeleteResumeItem} onSaveProfessional={handleSaveProfessional} />
+            : <p className="p-5 text-sm text-muted-foreground">Carregando currículo...</p>)}
+          {activeTab === 'settings' && <CandidateSettings onNavigate={setActiveTab} />}
+          {activeTab === 'support' && <CandidateSupport />}
         </AppShell>
       )}
     </ThemeProvider>

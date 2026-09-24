@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import {
   Search,
   Briefcase,
@@ -14,11 +14,13 @@ import {
   Sun,
   UserRound,
   FileBadge,
+  Settings,
+  CircleHelp,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import {
   Breadcrumb,
@@ -38,10 +40,9 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { CommandPalette } from '@/components/command-palette'
 import { ModeToggle } from '@/components/mode-toggle'
 
-const icons = { search: Search, briefcase: Briefcase, profile: User, resumes: FileText }
+const icons = { search: Search, briefcase: Briefcase, profile: User, resumes: FileText, settings: Settings, support: CircleHelp }
 
 const navGroups = [
   {
@@ -52,23 +53,15 @@ const navGroups = [
     label: 'Candidato',
     items: ['profile', 'resumes'],
   },
+  {
+    label: 'Conta',
+    items: ['settings', 'support'],
+  },
 ]
 
 export function AppShell({ tabs, activeTab, onTabChange, user, notifications, notificationItems = [], onMarkNotificationsRead, onLogout, children }) {
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [commandOpen, setCommandOpen] = useState(false)
-
-  useEffect(() => {
-    const down = (e) => {
-      if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault()
-        setCommandOpen((o) => !o)
-      }
-    }
-    document.addEventListener('keydown', down)
-    return () => document.removeEventListener('keydown', down)
-  }, [])
 
   const currentTab = tabs.find((t) => t.id === activeTab)
   const initials = user.name.split(' ').map((n) => n[0]).slice(0, 2).join('')
@@ -155,11 +148,11 @@ export function AppShell({ tabs, activeTab, onTabChange, user, notifications, no
         ) : (
           <div className="flex items-center gap-2 rounded-lg p-1">
             <Avatar className="h-8 w-8">
+              <AvatarImage src={user.photoUrl || undefined} alt={`Foto de ${user.name}`} />
               <AvatarFallback className="bg-primary/15 text-xs font-bold text-primary">{initials}</AvatarFallback>
             </Avatar>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium">{user.name}</p>
-              <p className="truncate text-xs text-muted-foreground">{user.title}</p>
             </div>
             <button
               onClick={onLogout}
@@ -226,19 +219,6 @@ export function AppShell({ tabs, activeTab, onTabChange, user, notifications, no
           </Breadcrumb>
 
           <div className="ml-auto flex items-center gap-1.5">
-            {/* Command trigger */}
-            <button
-              onClick={() => setCommandOpen(true)}
-              className="flex h-9 items-center gap-2 rounded-md border bg-muted/50 px-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
-              aria-label="Abrir busca (Ctrl+K)"
-            >
-              <Search className="h-4 w-4" />
-              <span className="hidden md:inline">Buscar...</span>
-              <kbd className="pointer-events-none hidden rounded border bg-background px-1.5 text-[10px] font-medium text-muted-foreground md:inline-flex">
-                ⌘K
-              </kbd>
-            </button>
-
             <ModeToggle />
 
             {/* Notificações */}
@@ -278,6 +258,7 @@ export function AppShell({ tabs, activeTab, onTabChange, user, notifications, no
               <DropdownMenuTrigger asChild>
                 <button className="ml-1 flex items-center gap-2 rounded-lg p-1 transition-colors hover:bg-accent" aria-label="Menu do perfil">
                   <Avatar className="h-8 w-8">
+                    <AvatarImage src={user.photoUrl || undefined} alt={`Foto de ${user.name}`} />
                     <AvatarFallback className="bg-primary/15 text-xs font-bold text-primary">{initials}</AvatarFallback>
                   </Avatar>
                   <span className="hidden text-sm font-medium lg:inline">{user.name}</span>
@@ -293,7 +274,7 @@ export function AppShell({ tabs, activeTab, onTabChange, user, notifications, no
                   <UserRound /> Meu Perfil
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => { onTabChange('resumes'); setMobileOpen(false) }}>
-                  <FileBadge /> Currículos
+                  <FileBadge /> Meu Currículo
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={onLogout} className="text-destructive focus:text-destructive">
@@ -309,7 +290,6 @@ export function AppShell({ tabs, activeTab, onTabChange, user, notifications, no
         </main>
       </div>
 
-      <CommandPalette open={commandOpen} setOpen={setCommandOpen} tabs={tabs} onNavigate={onTabChange} onLogout={onLogout} />
     </TooltipProvider>
   )
 }
