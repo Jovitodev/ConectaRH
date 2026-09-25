@@ -1,13 +1,14 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 import { resetPassword } from '@/lib/authStore.js'
 import { maskCpf, maskPhone, onlyDigits, validPhone } from '@/lib/inputMasks.js'
 import { validatePcd } from '@/lib/pcdRules.js'
+import { PasswordRequirements } from '@/components/PasswordRequirements.jsx'
+import { validatePassword } from '@/lib/passwordRules.js'
 
 const disabilityOptions = [
   'Deficiência física', 'Deficiência visual', 'Baixa visão', 'Cegueira', 'Deficiência auditiva', 'Surdez',
@@ -15,8 +16,7 @@ const disabilityOptions = [
   'Transtorno do Espectro Autista (TEA)',
 ]
 
-export default function ProfileRegistration({ user, onSave, onLogout, onUploadAvatar, onRemoveAvatar, onOpenPcd }) {
-  const fileRef = useRef(null)
+export default function ProfileRegistration({ user, onSave, onLogout, onOpenPcd }) {
   const [form, setForm] = useState({ name: user.name || '', birthDate: user.birthDate || '', cpf: maskCpf(user.cpf), email: user.email || '', phone: maskPhone(user.phone), linkedin: user.linkedin || '' })
   const [pcdAnswer, setPcdAnswer] = useState(user.pcd === null || user.pcd === undefined ? '' : user.pcd ? 'yes' : 'no')
   const [disabilityType, setDisabilityType] = useState(user.disabilityType || '')
@@ -25,23 +25,7 @@ export default function ProfileRegistration({ user, onSave, onLogout, onUploadAv
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [saving, setSaving] = useState(false)
-  const [photoBusy, setPhotoBusy] = useState(false)
   const set = (key) => (event) => setForm((current) => ({ ...current, [key]: event.target.value }))
-  const uploadPhoto = async (event) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-    setPhotoBusy(true)
-    try { await onUploadAvatar(file); toast.success('Foto de perfil atualizada.') }
-    catch (error) { toast.error(error.message || 'Não foi possível enviar a foto.') }
-    finally { setPhotoBusy(false); event.target.value = '' }
-  }
-  const removePhoto = async () => {
-    if (!window.confirm('Remover sua foto de perfil?')) return
-    setPhotoBusy(true)
-    try { await onRemoveAvatar(); toast.success('Foto removida.') }
-    catch (error) { toast.error(error.message || 'Não foi possível remover a foto.') }
-    finally { setPhotoBusy(false) }
-  }
   const save = async (event) => {
     event.preventDefault()
     if (form.name.trim().length < 3) return toast.error('Informe seu nome completo.')
@@ -60,7 +44,7 @@ export default function ProfileRegistration({ user, onSave, onLogout, onUploadAv
   }
   const changePassword = async (event) => {
     event.preventDefault()
-    if (password.length < 8) return toast.error('A senha deve ter pelo menos 8 caracteres.')
+    try { validatePassword(password) } catch (error) { return toast.error(error.message) }
     if (password !== confirm) return toast.error('As senhas não coincidem.')
     setSaving(true)
     try { await resetPassword(password); setPassword(''); setConfirm(''); toast.success('Senha alterada com sucesso.') }
@@ -68,8 +52,7 @@ export default function ProfileRegistration({ user, onSave, onLogout, onUploadAv
     finally { setSaving(false) }
   }
   return <div className="space-y-5">
-    <div className="flex items-center gap-4"><Avatar className="h-16 w-16"><AvatarImage src={user.photoUrl || undefined} alt={`Foto de ${user.name}`} /><AvatarFallback className="bg-primary/15 font-semibold text-primary">{(user.name || '').split(' ').map((part) => part[0]).slice(0, 2).join('')}</AvatarFallback></Avatar><div><h1 className="font-poppins text-2xl font-semibold">Meu Perfil</h1><p className="text-sm text-muted-foreground">Seus dados pessoais e acesso à conta.</p></div></div>
-    <Card className="space-y-3 p-5"><h2 className="font-poppins font-semibold">Foto de perfil</h2><p className="text-xs text-muted-foreground">JPG, PNG ou WebP, até 2 MB.</p><input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={uploadPhoto} /><div className="flex gap-2"><Button type="button" variant="outline" disabled={photoBusy} onClick={() => fileRef.current?.click()}>{user.avatarPath ? 'Alterar foto' : 'Adicionar foto'}</Button>{user.avatarPath && <Button type="button" variant="ghost" disabled={photoBusy} onClick={removePhoto}>Remover foto</Button>}</div></Card>
+    <div><h1 className="font-poppins text-2xl font-semibold">Meu Perfil</h1><p className="text-sm text-muted-foreground">Seus dados pessoais e acesso à conta.</p></div>
     <form onSubmit={save} className="space-y-5">
       <Card className="space-y-4 p-5"><h2 className="font-poppins font-semibold">Dados pessoais</h2><div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-1.5 sm:col-span-2"><Label htmlFor="profile-name">Nome completo</Label><Input id="profile-name" value={form.name} onChange={set('name')} required /></div>
@@ -90,7 +73,7 @@ export default function ProfileRegistration({ user, onSave, onLogout, onUploadAv
       </Card>
       <Button type="submit" disabled={saving}>{saving ? 'Salvando...' : 'Salvar dados'}</Button>
     </form>
-    <Card className="space-y-4 p-5"><h2 className="font-poppins font-semibold">Segurança da conta</h2><form onSubmit={changePassword} className="grid gap-4 sm:grid-cols-2"><div className="space-y-1.5"><Label htmlFor="profile-password">Nova senha</Label><Input id="profile-password" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} /></div><div className="space-y-1.5"><Label htmlFor="profile-confirm">Confirmar nova senha</Label><Input id="profile-confirm" type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} /></div><div className="sm:col-span-2"><Button type="submit" variant="outline" disabled={saving}>Alterar senha</Button></div></form></Card>
+    <Card className="space-y-4 p-5"><h2 className="font-poppins font-semibold">Segurança da conta</h2><form onSubmit={changePassword} className="grid gap-4 sm:grid-cols-2"><div className="space-y-1.5"><Label htmlFor="profile-password">Nova senha</Label><Input id="profile-password" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} /><PasswordRequirements password={password} /></div><div className="space-y-1.5"><Label htmlFor="profile-confirm">Confirmar nova senha</Label><Input id="profile-confirm" type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} /></div><div className="sm:col-span-2"><Button type="submit" variant="outline" disabled={saving}>Alterar senha</Button></div></form></Card>
     <Card className="space-y-3 p-5"><h2 className="font-poppins font-semibold">Configurações da conta</h2><Button variant="outline" onClick={onLogout}>Sair da conta</Button></Card>
   </div>
 }

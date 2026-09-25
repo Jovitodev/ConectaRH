@@ -1,5 +1,4 @@
 import { supabase } from './supabase.js'
-import { signedAvatarUrl } from './profileFiles.js'
 import { parseSalary } from './inputMasks.js'
 import { validatePcd } from './pcdRules.js'
 
@@ -66,7 +65,6 @@ const mapping = {
 
 export async function loadCandidateResume() {
   const { usuario, candidato } = await getCandidateRecord()
-  const photoUrl = await signedAvatarUrl(usuario.avatar_path)
   const entries = await Promise.all(Object.entries(tables).map(async ([section, table]) => {
     const rows = check(await supabase.from(table).select('*').eq('candidato_id', candidato.id).order('id'))
     return [section, rows.map(mapping[section].from)]
@@ -76,7 +74,6 @@ export async function loadCandidateResume() {
     user: {
       id: usuario.id, auth_user_id: usuario.auth_user_id, name: usuario.nome, email: usuario.email,
       phone: usuario.telefone || '', cpf: usuario.cpf || '', birthDate: usuario.data_nascimento || '',
-      avatarPath: usuario.avatar_path || null, photoUrl,
       pcd: candidato.pcd, disabilityType: candidato.tipo_deficiencia || '',
       pcdDocumentPath: candidato.comprovante_pcd_path || null,
       title: candidato.cargo_atual || '', city: candidato.cidade || '', state: candidato.estado || '',
@@ -122,6 +119,15 @@ export async function saveProfessionalData(values) {
     modalidade: values.workPreference || null,
     portfolio: values.portfolioUrl || null,
   }).eq('id', candidato.id))
+}
+
+export async function completeInitialResume() {
+  const { candidato } = await getCandidateRecord()
+  const areas = check(await supabase.from('candidato_areas').select('area_id').eq('candidato_id', candidato.id).limit(1))
+  if (!candidato.cargo_atual?.trim() || !candidato.cidade?.trim() || !candidato.estado?.trim() || areas.length === 0) {
+    throw new Error('Salve cargo atual, cidade, estado e ao menos uma área de interesse antes de finalizar.')
+  }
+  check(await supabase.from('candidatos').update({ perfil_completo: 100 }).eq('id', candidato.id).select('id').single())
 }
 
 export async function savePcdProfile({ pcd, disabilityType, documentPath }) {

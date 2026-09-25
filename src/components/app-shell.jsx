@@ -16,11 +16,11 @@ import {
   FileBadge,
   Settings,
   CircleHelp,
+  MessageSquare,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
-import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import {
   Breadcrumb,
@@ -42,7 +42,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/co
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { ModeToggle } from '@/components/mode-toggle'
 
-const icons = { search: Search, briefcase: Briefcase, profile: User, resumes: FileText, settings: Settings, support: CircleHelp }
+const icons = { search: Search, briefcase: Briefcase, profile: User, resumes: FileText, settings: Settings, support: CircleHelp, messages: MessageSquare }
 
 const navGroups = [
   {
@@ -55,11 +55,11 @@ const navGroups = [
   },
   {
     label: 'Conta',
-    items: ['settings', 'support'],
+    items: ['messages', 'settings', 'support'],
   },
 ]
 
-export function AppShell({ tabs, activeTab, onTabChange, user, notifications, notificationItems = [], onMarkNotificationsRead, onLogout, children }) {
+export function AppShell({ tabs, activeTab, onTabChange, user, notifications, notificationItems = [], onMarkNotificationsRead, onOpenMessages, onLogout, children }) {
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
 
@@ -147,10 +147,7 @@ export function AppShell({ tabs, activeTab, onTabChange, user, notifications, no
           </Tooltip>
         ) : (
           <div className="flex items-center gap-2 rounded-lg p-1">
-            <Avatar className="h-8 w-8">
-              <AvatarImage src={user.photoUrl || undefined} alt={`Foto de ${user.name}`} />
-              <AvatarFallback className="bg-primary/15 text-xs font-bold text-primary">{initials}</AvatarFallback>
-            </Avatar>
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">{initials}</span>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium">{user.name}</p>
             </div>
@@ -237,18 +234,17 @@ export function AppShell({ tabs, activeTab, onTabChange, user, notifications, no
                 <DropdownMenuLabel className="flex items-center justify-between"><span>Notificações</span>{onMarkNotificationsRead && <button type="button" onClick={onMarkNotificationsRead} className="text-[11px] font-normal text-primary hover:underline">Marcar como lidas</button>}</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <div className="space-y-1 p-1">
-                  {(notificationItems.length ? notificationItems : [
-                    { id: 'seed-1', title: 'Nova etapa no processo', message: 'Sua candidatura recebeu uma atualização.' },
-                    { id: 'seed-2', title: 'Entrevista agendada', message: 'Você possui uma entrevista pendente de confirmação.' },
-                  ]).map((n) => (
-                    <button key={n.id} className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-accent">
+                  {notificationItems.slice(0, 4).map((n) => (
+                    <button key={n.id} onClick={onOpenMessages} className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-accent">
                       <Badge variant="info" className="mt-0.5 h-1.5 w-1.5 rounded-full p-0" />
                       <div>
-                        <p className="text-sm font-medium">{n.title || n.t}</p>
-                        <p className="text-xs text-muted-foreground">{n.message || n.d}</p>
+                        <p className="text-sm font-medium">{n.titulo}</p>
+                        <p className="text-xs text-muted-foreground">{n.mensagem}</p>
                       </div>
                     </button>
                   ))}
+                  {!notificationItems.length && <p className="px-2 py-3 text-xs text-muted-foreground">Nenhuma mensagem.</p>}
+                  <button className="w-full px-2 py-2 text-left text-xs font-medium text-primary hover:underline" onClick={onOpenMessages}>Abrir Central de Mensagens</button>
                 </div>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -257,10 +253,7 @@ export function AppShell({ tabs, activeTab, onTabChange, user, notifications, no
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="ml-1 flex items-center gap-2 rounded-lg p-1 transition-colors hover:bg-accent" aria-label="Menu do perfil">
-                  <Avatar className="h-8 w-8">
-                    <AvatarImage src={user.photoUrl || undefined} alt={`Foto de ${user.name}`} />
-                    <AvatarFallback className="bg-primary/15 text-xs font-bold text-primary">{initials}</AvatarFallback>
-                  </Avatar>
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">{initials}</span>
                   <span className="hidden text-sm font-medium lg:inline">{user.name}</span>
                 </button>
               </DropdownMenuTrigger>

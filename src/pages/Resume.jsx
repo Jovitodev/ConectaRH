@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Plus, Pencil, Trash2, Briefcase, GraduationCap, Wrench, Languages, Link2, Trophy, UserRound } from 'lucide-react'
 import { Card } from '@/components/ui/card'
@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { formatSalary, maskSalaryInput } from '@/lib/inputMasks.js'
+import { loadAreas, saveAreas } from '@/lib/candidateExtras.js'
 
 const sections = [
   { key: 'experiences', icon: Briefcase, title: 'Experiências Profissionais', add: 'Adicionar Experiência', label: (x) => `${x.role || 'Cargo'} · ${x.company || 'Empresa'}`, fields: [['role', 'Cargo'], ['company', 'Empresa'], ['modality', 'Modalidade'], ['start', 'Início', 'date'], ['end', 'Fim', 'date'], ['description', 'Descrição', 'textarea'], ['skills', 'Habilidades (separadas por vírgula)']] },
@@ -39,10 +40,23 @@ function ItemEditor({ section, item, onCancel, onSave }) {
   </form>
 }
 
-export default function Resume({ user, resume, onSaveItem, onDeleteItem, onSaveProfessional }) {
+export default function Resume({ user, resume, onSaveItem, onDeleteItem, onSaveProfessional, onboardingSection = null }) {
   const [editing, setEditing] = useState(null)
   const [professional, setProfessional] = useState({ title: user.title || '', city: user.city || '', state: user.state || '', desiredSalary: formatSalary(user.desiredSalary), availability: user.availability || '', workPreference: user.workPreference || '', portfolioUrl: user.portfolioUrl || '' })
   const [savingProfessional, setSavingProfessional] = useState(false)
+  const [availableAreas, setAvailableAreas] = useState([])
+  const [selectedAreas, setSelectedAreas] = useState([])
+  const [savingAreas, setSavingAreas] = useState(false)
+  useEffect(() => {
+    loadAreas().then(({ areas, selectedIds }) => { setAvailableAreas(areas); setSelectedAreas(selectedIds) }).catch((error) => toast.error('Não foi possível carregar áreas: ' + error.message))
+  }, [])
+  const toggleArea = (id) => setSelectedAreas((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id])
+  const persistAreas = async () => {
+    setSavingAreas(true)
+    try { await saveAreas(selectedAreas); toast.success('Áreas de interesse salvas.') }
+    catch (error) { toast.error(error.message || 'Não foi possível salvar as áreas.') }
+    finally { setSavingAreas(false) }
+  }
   const saveProfessional = async (event) => {
     event.preventDefault(); setSavingProfessional(true)
     try { await onSaveProfessional(professional); toast.success('Dados profissionais salvos.') }
@@ -55,13 +69,14 @@ export default function Resume({ user, resume, onSaveItem, onDeleteItem, onSaveP
     catch (error) { toast.error(error.message || 'Não foi possível excluir.') }
   }
   return <div className="space-y-5">
-    <div><h1 className="font-poppins text-2xl font-semibold">Meu Currículo</h1><p className="text-sm text-muted-foreground">Suas informações profissionais para candidaturas.</p></div>
-    <Card className="rounded-xl border bg-card p-5 shadow-sm"><h2 className="mb-4 flex items-center gap-3 font-poppins font-semibold"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><UserRound className="h-5 w-5" /></span>Dados profissionais</h2>
+    {!onboardingSection && <div><h1 className="font-poppins text-2xl font-semibold">Meu Currículo</h1><p className="text-sm text-muted-foreground">Suas informações profissionais para candidaturas.</p></div>}
+    {(!onboardingSection || onboardingSection === 'professional') && <Card className="rounded-xl border bg-card p-5 shadow-sm"><h2 className="mb-4 flex items-center gap-3 font-poppins font-semibold"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><UserRound className="h-5 w-5" /></span>Dados profissionais</h2>
       <form onSubmit={saveProfessional} className="space-y-4"><div className="grid gap-3 sm:grid-cols-2">
         {[["title", "Título profissional"], ["city", "Cidade"], ["state", "Estado"], ["desiredSalary", "Pretensão salarial"], ["availability", "Disponibilidade"], ["workPreference", "Preferência de trabalho"], ["portfolioUrl", "Site pessoal"]].map(([key, label]) => <div key={key} className="space-y-1.5"><Label htmlFor={`professional-${key}`}>{label}</Label><Input id={`professional-${key}`} inputMode={key === 'desiredSalary' ? 'numeric' : undefined} value={professional[key]} onChange={(e) => setProfessional({ ...professional, [key]: key === 'desiredSalary' ? maskSalaryInput(e.target.value) : e.target.value })} /></div>)}
       </div><Button type="submit" disabled={savingProfessional}>{savingProfessional ? 'Salvando...' : 'Salvar dados profissionais'}</Button></form>
-    </Card>
-    <Accordion type="multiple" defaultValue={sections.map((s) => s.key)} className="space-y-3">{sections.map((section) => <AccordionItem key={section.key} value={section.key} className="rounded-xl border bg-card px-5 shadow-sm"><AccordionTrigger className="font-poppins font-semibold"><span className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><section.icon className="h-5 w-5" /></span>{section.title}</span></AccordionTrigger><AccordionContent className="space-y-3">
+    </Card>}
+    {(!onboardingSection || onboardingSection === 'areas') && <Card className="rounded-xl border bg-card p-5 shadow-sm"><h2 className="mb-2 font-poppins font-semibold">Áreas de interesse</h2><p className="mb-4 text-sm text-muted-foreground">Selecione quantas áreas desejar.</p><div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{availableAreas.map((area) => <label key={area.id} className="flex items-center gap-2 rounded-lg border p-2 text-sm"><input type="checkbox" checked={selectedAreas.includes(area.id)} onChange={() => toggleArea(area.id)} />{area.nome}</label>)}</div><Button type="button" onClick={persistAreas} disabled={savingAreas}>{savingAreas ? 'Salvando...' : 'Salvar áreas'}</Button></Card>}
+    <Accordion type="multiple" defaultValue={sections.map((s) => s.key)} className="space-y-3">{sections.filter((section) => !onboardingSection || section.key === onboardingSection).map((section) => <AccordionItem key={section.key} value={section.key} className="rounded-xl border bg-card px-5 shadow-sm"><AccordionTrigger className="font-poppins font-semibold"><span className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><section.icon className="h-5 w-5" /></span>{section.title}</span></AccordionTrigger><AccordionContent className="space-y-3">
       <Button size="sm" variant="outline" onClick={() => setEditing({ section: section.key, id: 'new' })}><Plus className="mr-1 h-4 w-4" />{section.add}</Button>
       {editing?.section === section.key && editing.id === 'new' && <ItemEditor key={`${section.key}-new`} section={section} item={{}} onCancel={() => setEditing(null)} onSave={(item) => onSaveItem(section.key, item)} />}
       {(resume[section.key] || []).filter((item) => section.key !== 'portfolio' || !/linkedin/i.test(`${item.label || ''} ${item.url || ''}`)).map((item) => <div key={item.id} className="rounded-lg border p-3">

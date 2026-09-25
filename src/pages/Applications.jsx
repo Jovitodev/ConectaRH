@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Briefcase, Building2, MapPin, CalendarDays, FileCheck2, ChevronLeft, ArrowRight, CircleDollarSign, History } from 'lucide-react'
+import { Briefcase, Building2, MapPin, FileCheck2, ChevronLeft, ArrowRight, CircleDollarSign, History } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -27,7 +27,6 @@ export default function Applications({ applications, jobs, jobStepsList, updateA
     () => [
       { label: 'Candidaturas ativas', value: enriched.length, icon: Briefcase },
       { label: 'Em análise', value: enriched.filter((a) => a.status === 'Em andamento').length, icon: FileCheck2 },
-      { label: 'Entrevistas', value: enriched.reduce((s, a) => s + (a.interviews?.length ?? 0), 0), icon: CalendarDays },
       { label: 'Salário médio', value: 'R$ 9k', icon: CircleDollarSign },
     ],
     [enriched],
@@ -59,7 +58,7 @@ export default function Applications({ applications, jobs, jobStepsList, updateA
       },
       {
         accessorKey: 'job.sector',
-        header: 'Setor',
+        header: 'Área',
         cell: ({ row }) => (
           <Badge variant={sectorBadgeVariant[row.original.job.sector]}>
             {sectors.find((s) => s.id === row.original.job.sector)?.label}

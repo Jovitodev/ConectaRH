@@ -1,9 +1,6 @@
 import { useState, useRef } from 'react'
 import { toast } from 'sonner'
 import {
-  CalendarClock,
-  CalendarCheck2,
-  Video,
   Clock3,
   ClipboardList,
   FileText,
@@ -16,7 +13,6 @@ import {
   Banknote,
   MessageSquareText,
   Send,
-  Sparkles,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -49,12 +45,6 @@ const docStatusMap = {
   sent: { label: 'Enviado', variant: 'success', icon: CheckCircle2 },
   review: { label: 'Em Análise', variant: 'info', icon: Loader2 },
   pending: { label: 'Pendente', variant: 'warning', icon: AlertTriangle },
-}
-
-const interviewStatusMap = {
-  confirmed: { label: 'Presença Confirmada', variant: 'success' },
-  suggested: { label: 'Horário Sugerido', variant: 'info' },
-  pending: { label: 'Aguardando Confirmação', variant: 'warning' },
 }
 
 const sectorBadgeVariant = {
@@ -92,21 +82,6 @@ export default function ActiveProcess({ applications, jobs, activeAppId, setActi
   const currentStepName = steps[app.currentStep] || ''
 
   const update = (updater) => updateApp(app.id, updater)
-
-  const confirmPresence = (intId) => {
-    update((a) => ({ ...a, interviews: a.interviews.map((i) => (i.id === intId ? { ...i, status: 'confirmed' } : i)) }))
-    toast.success('Presença confirmada!', { description: 'Acesse a sala virtual no horário marcado.' })
-  }
-
-  const acceptSuggested = (intId) => {
-    update((a) => ({ ...a, interviews: a.interviews.map((i) => (i.id === intId ? { ...i, status: 'confirmed' } : i)) }))
-    toast.success('Horário aceito!', { description: 'O horário sugerido foi adicionado à sua agenda.' })
-  }
-
-  const requestReschedule = (intId) => {
-    update((a) => ({ ...a, interviews: a.interviews.map((i) => (i.id === intId ? { ...i, status: 'pending' } : i)) }))
-    toast.info('Reagendamento solicitado', { description: 'O recrutador proporá novos horários.' })
-  }
 
   const submitTask = (task) => {
     update((a) => {
@@ -192,7 +167,6 @@ export default function ActiveProcess({ applications, jobs, activeAppId, setActi
       <Tabs defaultValue="schedule" className="w-full">
         <TabsList className="w-full flex-wrap justify-start">
           <TabsTrigger value="schedule">Cronograma & Regras</TabsTrigger>
-          <TabsTrigger value="interviews">Entrevistas ({app.interviews.length})</TabsTrigger>
           <TabsTrigger value="tasks">Tarefas ({app.tasks.filter((t) => t.status === 'pending').length})</TabsTrigger>
           <TabsTrigger value="documents">Documentos</TabsTrigger>
         </TabsList>
@@ -236,64 +210,11 @@ export default function ActiveProcess({ applications, jobs, activeAppId, setActi
                 </div>
                 <Separator />
                 <p className="flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400">
-                  <AlertTriangle className="h-4 w-4 shrink-0" /> Prazos variam conforme a etapa e o setor da vaga.
+                  <AlertTriangle className="h-4 w-4 shrink-0" /> Prazos variam conforme a etapa e a área da vaga.
                 </p>
               </CardContent>
             </Card>
           </div>
-        </TabsContent>
-
-        {/* Entrevistas */}
-        <TabsContent value="interviews">
-          {app.interviews.length === 0 ? (
-            <Card className="p-10 text-center text-sm text-muted-foreground">Nenhuma entrevista agendada para esta vaga.</Card>
-          ) : (
-            <div className="space-y-4">
-              {app.interviews.map((int) => {
-                const st = interviewStatusMap[int.status] || interviewStatusMap.pending
-                return (
-                  <Card key={int.id}>
-                    <CardContent className="space-y-3 p-5">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <p className="font-poppins text-sm font-semibold">{int.title}</p>
-                          <p className="mt-0.5 text-xs text-muted-foreground">
-                            {int.date} às {int.time} · {int.duration} · com {int.host}
-                          </p>
-                        </div>
-                        <Badge variant={st.variant}>{st.label}</Badge>
-                      </div>
-
-                      {int.status === 'confirmed' ? (
-                        <a
-                          href={int.link}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-                        >
-                          <Video className="h-4 w-4" /> Acessar Sala Virtual
-                        </a>
-                      ) : (
-                        <div className="flex flex-wrap gap-2">
-                          <Button variant="success" size="sm" onClick={() => confirmPresence(int.id)}>
-                            <CalendarCheck2 className="h-4 w-4" /> Confirmar Presença
-                          </Button>
-                          {int.status === 'suggested' && (
-                            <Button size="sm" variant="default" onClick={() => acceptSuggested(int.id)}>
-                              <Sparkles className="h-4 w-4" /> Aceitar Horário
-                            </Button>
-                          )}
-                          <Button variant="outline" size="sm" onClick={() => requestReschedule(int.id)}>
-                            <CalendarClock className="h-4 w-4" /> Solicitar Reagendamento
-                          </Button>
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                )
-              })}
-            </div>
-          )}
         </TabsContent>
 
         {/* Tarefas */}

@@ -1,5 +1,6 @@
 import { supabase } from './supabase.js'
 import { onlyDigits, validPhone } from './inputMasks.js'
+import { validatePassword } from './passwordRules.js'
 
 export async function signIn(email, password) {
   const normalizedEmail = email.trim().toLowerCase()
@@ -15,6 +16,10 @@ export async function signIn(email, password) {
 
   if (!data.user) {
     throw new Error('Não foi possível identificar o usuário.')
+  }
+  if (data.user.app_metadata?.role === 'colaborador') {
+    await supabase.auth.signOut()
+    throw new Error('Use o Login do Colaborador para esta conta.')
   }
 
   const { data: usuario, error: usuarioError } = await supabase
@@ -38,11 +43,22 @@ export async function signIn(email, password) {
   }
 }
 
+export async function signInCollaborator(email, password) {
+  const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password })
+  if (error || !data.user) throw new Error('E-mail ou senha inválidos.')
+  if (data.user.app_metadata?.role !== 'colaborador') {
+    await supabase.auth.signOut()
+    throw new Error('Esta conta não possui acesso de colaborador.')
+  }
+  return { id: data.user.id, name: data.user.user_metadata?.name || data.user.email, email: data.user.email, account: 'colaborador', position: 'Colaborador', role: 'Colaborador' }
+}
+
 export async function signUpCandidate({
   name,
   email,
   password,
 }) {
+  validatePassword(password)
   const normalizedEmail = email.trim().toLowerCase()
 
   const { data, error } = await supabase.auth.signUp({
@@ -94,16 +110,18 @@ export async function getSession() {
 }
 
 export async function getCurrentUser() {
-  const session = await getSession()
-
-  if (!session?.user) {
+  const { data, error: authError } = await supabase.auth.getUser()
+  if (authError || !data.user) {
     return null
+  }
+  if (data.user.app_metadata?.role === 'colaborador') {
+    return { id: data.user.id, name: data.user.user_metadata?.name || data.user.email, email: data.user.email, account: 'colaborador', position: 'Colaborador', role: 'Colaborador' }
   }
 
   const { data: usuario, error } = await supabase
     .from('usuarios')
     .select('*')
-    .eq('auth_user_id', session.user.id)
+    .eq('auth_user_id', data.user.id)
     .single()
 
   if (error) {
@@ -113,7 +131,7 @@ export async function getCurrentUser() {
 
   return {
     id: usuario.id,
-    auth_user_id: session.user.id,
+    auth_user_id: data.user.id,
     name: usuario.nome,
     email: usuario.email,
     account: 'candidato',
@@ -200,13 +218,13 @@ export async function updateCurrentProfile(updates) {
 /**
  * SOLICITA RECUPERAÇÃO DE SENHA
  */
-export async function requestPasswordReset(email) {
+export async function requestPasswordReset(email, returnPath = '/') {
   const normalizedEmail = email.trim().toLowerCase()
 
   const { error } = await supabase.auth.resetPasswordForEmail(
     normalizedEmail,
     {
-      redirectTo: `${window.location.origin}/`,
+      redirectTo: `${window.location.origin}${returnPath}`,
     }
   )
 
@@ -221,6 +239,7 @@ export async function requestPasswordReset(email) {
  * ALTERA A SENHA
  */
 export async function resetPassword(newPassword) {
+  validatePassword(newPassword)
   const { error } = await supabase.auth.updateUser({
     password: newPassword,
   })

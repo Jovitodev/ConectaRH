@@ -1,31 +1,3 @@
-export const authAccounts = {
-  candidato: {
-    email: 'candidato@conectarh.com',
-    password: 'candidato123',
-    role: 'candidato',
-    name: 'Lucas Silva',
-    title: 'Enfermeiro / Gestor de Saúde',
-  },
-  colaborador: {
-    email: 'colaborador@conectarh.com',
-    password: 'colaborador123',
-    role: 'colaborador',
-    name: 'Marina Duarte',
-    title: 'Recrutadora Senior',
-    position: 'Recrutadora Senior',
-  },
-}
-
-export const colaborador = {
-  id: 'col-1',
-  name: 'Marina Duarte',
-  email: 'colaborador@conectarh.com',
-  role: 'Administrador',
-  position: 'Recrutadora Senior',
-  department: 'Recrutamento e Seleção',
-  avatar: null,
-}
-
 export const jobStatusMeta = {
   ativa: { label: 'Ativa', variant: 'success' },
   rascunho: { label: 'Rascunho', variant: 'secondary' },

@@ -13,6 +13,9 @@ import { Separator } from '@/components/ui/separator'
 import { PageHeader } from '@/components/admin-ui.jsx'
 import { jobTemplates, adminJobs } from '@/data/adminData.js'
 import { readStore, writeStore, uid } from '@/lib/localStore.js'
+import { sectors } from '@/data/mockData.js'
+
+const areaChoices = [...sectors.map((area) => area.label), 'Tecnologia', 'Recursos Humanos', 'Administrativo']
 
 const emptyBenefit = (i) => `Benefício ${i}`
 
@@ -27,6 +30,9 @@ export default function CreateVacancy({ onBack, onDone }) {
     title: '',
     company: 'Rede D\'Or',
     department: 'Saúde',
+    areas: [],
+    applicationStart: '',
+    applicationEnd: '',
     location: '',
     model: 'Presencial',
     type: 'CLT',
@@ -89,6 +95,8 @@ export default function CreateVacancy({ onBack, onDone }) {
       toast.error('Informe a localização.')
       return false
     }
+    if (!form.areas.length) { toast.error('Selecione ao menos uma área.'); return false }
+    if (!form.applicationStart || !form.applicationEnd || form.applicationEnd < form.applicationStart) { toast.error('Informe um período de inscrição válido.'); return false }
     return true
   }
 
@@ -110,7 +118,7 @@ export default function CreateVacancy({ onBack, onDone }) {
     const saved = readStore('admin.vacancies', adminJobs)
     const newJob = {
       id: uid('job'), code: `VAG-${String(saved.length + 1).padStart(4, '0')}`, title: form.title, company: form.company, department: form.department,
-      location: form.location, model: form.model, type: form.type, description: form.description, requirements: form.requirements.filter(Boolean),
+      location: form.location, areas: form.areas, applicationStart: form.applicationStart, applicationEnd: form.applicationEnd, model: form.model, type: form.type, description: form.description, requirements: form.requirements.filter(Boolean),
       benefits: form.benefits.filter(Boolean), pipeline: { steps: form.pipeline.filter(Boolean), totalSteps: form.pipeline.filter(Boolean).length },
       salary: { min: Number(form.salaryMin) || 0, max: Number(form.salaryMax) || 0 }, status: form.published ? 'ativa' : 'rascunho', visibility: form.visibility,
       recruiter: 'Marina Duarte', candidates: 0, openDays: 0, priority: 'normal', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
@@ -190,6 +198,9 @@ export default function CreateVacancy({ onBack, onDone }) {
                 <Label htmlFor="v-loc">Localização *</Label>
                 <Input id="v-loc" value={form.location} onChange={set('location')} placeholder="São Paulo, SP" />
               </div>
+              <fieldset className="space-y-2 sm:col-span-2"><legend className="text-sm font-medium">Áreas da vaga *</legend><p className="text-xs text-muted-foreground">Selecione uma ou mais áreas.</p><div className="flex flex-wrap gap-2">{areaChoices.map((area) => <label key={area} className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm"><input type="checkbox" checked={form.areas.includes(area)} onChange={() => setForm((current) => ({ ...current, areas: current.areas.includes(area) ? current.areas.filter((value) => value !== area) : [...current.areas, area] }))} />{area}</label>)}</div></fieldset>
+              <div className="space-y-1.5"><Label htmlFor="v-application-start">Início das inscrições *</Label><Input id="v-application-start" type="date" value={form.applicationStart} onChange={set('applicationStart')} /></div>
+              <div className="space-y-1.5"><Label htmlFor="v-application-end">Fim das inscrições *</Label><Input id="v-application-end" type="date" value={form.applicationEnd} onChange={set('applicationEnd')} /></div>
               <div className="space-y-1.5">
                 <Label htmlFor="v-model">Modelo de trabalho</Label>
                 <Select value={form.model} onValueChange={(v) => setRaw('model', v)}>

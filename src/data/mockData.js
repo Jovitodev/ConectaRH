@@ -35,7 +35,7 @@ export const ufList = [
 
 export const sectors = [
   { id: 'saude', label: 'Saúde', color: 'bg-sky-50 text-sky-800 border-sky-200' },
-  { id: 'financas', label: 'Finanças', color: 'bg-indigo-50 text-indigo-800 border-indigo-200' },
+  { id: 'financas', label: 'Financeiro', color: 'bg-indigo-50 text-indigo-800 border-indigo-200' },
   { id: 'comercial', label: 'Comercial / Vendas', color: 'bg-teal-50 text-teal-800 border-teal-200' },
   { id: 'marketing', label: 'Marketing', color: 'bg-amber-50 text-amber-800 border-amber-200' },
   { id: 'logistica', label: 'Logística / Operações', color: 'bg-emerald-50 text-emerald-800 border-emerald-200' },
@@ -205,7 +205,7 @@ export const jobs = [
       steps: pipelineTemplates.logistica,
     },
   },
-]
+].map((job) => ({ ...job, areas: [sectors.find((area) => area.id === job.sector)?.label].filter(Boolean), applicationStart: '2026-09-01', applicationEnd: '2026-10-31' }))
 
 export const initialApplications = [
   {

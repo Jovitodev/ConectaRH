@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Toaster } from '@/components/ui/sonner'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 import { ThemeProvider } from '@/components/theme-provider'
 import { AppShell } from '@/components/app-shell'
@@ -9,8 +10,11 @@ import JobsSearch from '@/pages/JobsSearch.jsx'
 import Applications from '@/pages/Applications.jsx'
 import ProfileRegistration from '@/pages/ProfileRegistration.jsx'
 import Resume from '@/pages/Resume.jsx'
+import ResumeOnboarding from '@/pages/ResumeOnboarding.jsx'
 import CandidateSettings from '@/pages/CandidateSettings.jsx'
 import CandidateSupport from '@/pages/CandidateSupport.jsx'
+import CandidateMessages from '@/pages/CandidateMessages.jsx'
+import CollaboratorLogin from '@/pages/CollaboratorLogin.jsx'
 import Dashboard from '@/pages/admin/Dashboard.jsx'
 import Vacancies from '@/pages/admin/Vacancies.jsx'
 import CreateVacancy from '@/pages/admin/CreateVacancy.jsx'
@@ -24,10 +28,11 @@ import Reports from '@/pages/admin/Reports.jsx'
 import Team from '@/pages/admin/Team.jsx'
 import Settings from '@/pages/admin/Settings.jsx'
 import { user as initialUser, jobs, initialApplications } from '@/data/mockData.js'
-import { colaborador as colaboradorUser } from '@/data/adminData.js'
 import { readStore, writeStore, uid } from '@/lib/localStore.js'
-import { loadCandidateResume, importLocalResumes, saveResumeItem, deleteResumeItem, saveProfessionalData, savePcdProfile } from '@/lib/candidateStore.js'
-import { uploadAvatar, removeAvatar, uploadPcdPdf, removePcdPdf, signedPcdUrl } from '@/lib/profileFiles.js'
+import { loadCandidateResume, importLocalResumes, saveResumeItem, deleteResumeItem, saveProfessionalData, savePcdProfile, completeInitialResume } from '@/lib/candidateStore.js'
+import { uploadPcdPdf, removePcdPdf, signedPcdUrl } from '@/lib/profileFiles.js'
+import { loadAreas, loadNotifications, markNotificationsRead } from '@/lib/candidateExtras.js'
+import { enrollmentStatus } from '@/lib/jobSearchRules.js'
 
 import {
   getCurrentUser,
@@ -43,6 +48,7 @@ const candidateTabs = [
   { id: 'resumes', label: 'Meu Currículo', icon: 'resumes', highlight: true },
   { id: 'settings', label: 'Configurações', icon: 'settings' },
   { id: 'support', label: 'Suporte', icon: 'support' },
+  { id: 'messages', label: 'Central de Mensagens', icon: 'messages' },
 ]
 
 export default function App() {
@@ -55,8 +61,17 @@ export default function App() {
   const [resume, setResume] = useState(null)
   const [resumeLoaded, setResumeLoaded] = useState(false)
   const [resumeOwner, setResumeOwner] = useState(null)
-  const [notifications, setNotifications] = useState(3)
   const [notificationItems, setNotificationItems] = useState([])
+  const [candidateAreas, setCandidateAreas] = useState([])
+  const [route, setRoute] = useState(window.location.pathname)
+  const [pendingJobId, setPendingJobId] = useState(null)
+  const navigate = (path) => { window.history.pushState({}, '', path); setRoute(path) }
+
+  useEffect(() => {
+    const onPopState = () => setRoute(window.location.pathname)
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
 
   useEffect(() => {
     getCurrentUser().then((sessionUser) => {
@@ -64,21 +79,28 @@ export default function App() {
         setAccount(sessionUser)
         setUser(sessionUser)
         const savedApplications = readStore(`candidate.applications.${sessionUser.id}`, null)
-        if (savedApplications) setApplications(savedApplications)
-        const savedNotifications = readStore(`candidate.notifications.${sessionUser.id}`, null)
-        if (savedNotifications) { setNotificationItems(savedNotifications); setNotifications(savedNotifications.filter((n) => !n.read).length) }
+        setApplications(savedApplications || [])
       }
     }).finally(() => setLoadingSession(false))
   }, [])
 
   useEffect(() => {
-    if (!account?.id) return
+    if (!account?.id || account.account === 'colaborador') return
     writeStore(`candidate.applications.${account.id}`, applications)
-    writeStore(`candidate.notifications.${account.id}`, notificationItems)
-  }, [account?.id, applications, notificationItems])
+  }, [account?.id, applications])
 
   useEffect(() => {
-    if (!account?.id) return
+    if (!account || account.account === 'colaborador') return
+    loadNotifications().then(setNotificationItems).catch((error) => toast.error('Não foi possível carregar mensagens: ' + error.message))
+  }, [account?.id])
+
+  useEffect(() => {
+    if (!account || account.account === 'colaborador' || activeTab !== 'jobs') return
+    loadAreas().then(({ areas, selectedIds }) => setCandidateAreas(areas.filter((area) => selectedIds.includes(area.id)).map((area) => area.nome))).catch(console.error)
+  }, [account?.id, activeTab])
+
+  useEffect(() => {
+    if (!account?.id || account.account === 'colaborador') return
     let cancelled = false
     setResumeLoaded(false)
     ;(async () => {
@@ -106,11 +128,22 @@ export default function App() {
     return () => { cancelled = true }
   }, [account?.id])
 
+  useEffect(() => {
+    if (!account || account.account === 'colaborador' || !resumeLoaded || resumeOwner !== account.id) return
+    if (user.profileProgress === 0 && route !== '/cadastro-curriculo') navigate('/cadastro-curriculo')
+    if (user.profileProgress > 0 && route === '/cadastro-curriculo') navigate('/')
+  }, [account?.id, resumeLoaded, resumeOwner, user.profileProgress, route])
+
   const applyToJob = (jobId) => {
+    if (!account) { setPendingJobId(jobId); navigate('/login'); return false }
+    if (account.account !== 'candidato' || !resumeLoaded || !resume || resumeOwner !== account.id || !Number(user.profileProgress)) {
+      setPendingJobId(jobId); navigate('/cadastro-curriculo'); return false
+    }
     const already = applications.find((a) => a.jobId === jobId)
-    if (already) return
+    if (already) return false
     const job = jobs.find((j) => j.id === jobId)
-    if (!job) return
+    if (!job) return false
+    if (enrollmentStatus(job) !== 'aberta') { toast.error('Esta vaga está fora do período de inscrição.'); return false }
     const id = uid('app')
     const application = {
       id, jobId, resumeId: resume?.id, appliedAt: new Date().toISOString(), currentStep: 0,
@@ -118,9 +151,15 @@ export default function App() {
       history: [{ id: uid('history'), type: 'application', label: 'Candidatura enviada', date: new Date().toISOString(), description: `Candidatura enviada para ${job.title}.` }],
     }
     setApplications((prev) => [application, ...prev])
-    setNotificationItems((prev) => [{ id: uid('notif'), title: 'Candidatura enviada', message: `Sua candidatura para ${job.title} foi registrada.`, read: false, createdAt: new Date().toISOString(), link: 'applications' }, ...prev])
-    setNotifications((n) => n + 1)
+    return true
   }
+
+  useEffect(() => {
+    if (!pendingJobId || !account || account.account !== 'candidato' || !resumeLoaded || resumeOwner !== account.id || user.profileProgress === 0) return
+    const applied = applyToJob(pendingJobId)
+    if (applied) toast.success('Candidatura confirmada!')
+    setPendingJobId(null)
+  }, [pendingJobId, account?.id, resumeLoaded, resumeOwner, user.profileProgress])
 
   const jobStepsList = (jobId) => {
     const job = jobs.find((j) => j.id === jobId)
@@ -174,16 +213,6 @@ export default function App() {
     }
   }
 
-  const handleUploadAvatar = async (file) => {
-    const avatar = await uploadAvatar(file)
-    setUser((previous) => ({ ...previous, avatarPath: avatar.path, photoUrl: avatar.url }))
-  }
-
-  const handleRemoveAvatar = async () => {
-    await removeAvatar()
-    setUser((previous) => ({ ...previous, avatarPath: null, photoUrl: null }))
-  }
-
   const handleOpenPcd = async (path) => {
     const tab = window.open('', '_blank')
     try {
@@ -213,17 +242,36 @@ export default function App() {
     setResume((previous) => ({ ...previous, [section]: previous[section].filter((entry) => entry.id !== id) }))
   }
 
-  const markNotificationsRead = () => {
-    setNotificationItems((prev) => prev.map((n) => ({ ...n, read: true }))); setNotifications(0)
+  const markRead = async (ids) => {
+    await markNotificationsRead(ids)
+    setNotificationItems((prev) => prev.map((item) => ids.includes(item.id) ? { ...item, lida: true } : item))
   }
+  const markAllRead = () => markRead(notificationItems.filter((item) => !item.lida).map((item) => item.id))
 
-  const handleLogout = () => {
-    signOut()
+  const handleLogout = async () => {
+    try { await signOut() }
+    catch (error) { toast.error(error.message || 'Não foi possível sair da conta.'); return }
     setAccount(null)
     setResume(null)
     setResumeOwner(null)
     setActiveTab('jobs')
     setAdminView('dashboard')
+    navigate('/')
+  }
+
+  const handleAuthenticated = async (authenticated) => {
+    const current = authenticated.account === 'candidato' ? (await getCurrentUser()) || authenticated : authenticated
+    setAccount(current)
+    setUser(current)
+    if (current.account === 'candidato') setApplications(readStore(`candidate.applications.${current.id}`, []))
+    setResumeLoaded(false)
+    if (current.account === 'colaborador') navigate('/colaborador')
+    else navigate('/')
+  }
+
+  const handleFinishOnboarding = async (redirect = false) => {
+    if (redirect) { setUser((previous) => ({ ...previous, profileProgress: 100 })); setPendingJobId(null); navigate('/'); return }
+    await completeInitialResume()
   }
 
   const isCollaborator = account?.account === 'colaborador'
@@ -232,16 +280,19 @@ export default function App() {
 
   return (
     <ThemeProvider defaultTheme="light">
+      <TooltipProvider delayDuration={300}>
       <Toaster position="top-right" richColors />
 
       {!account ? (
-        <AuthScreen onAuthenticated={setAccount} />
+        route === '/colaborador/login' ? <CollaboratorLogin onAuthenticated={handleAuthenticated} onCandidateLogin={() => navigate('/login')} />
+          : route === '/login' || route === '/cadastro' || route === '/cadastro-curriculo' ? <AuthScreen key={route} initialMode={route === '/cadastro' ? 'signup' : 'signin'} onAuthenticated={handleAuthenticated} onBack={() => navigate('/')} />
+            : <main className="min-h-screen bg-background"><header className="border-b bg-card"><div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-4"><div><p className="font-poppins text-xl font-bold">Conecta<span className="text-primary">RH</span></p><p className="text-xs text-muted-foreground">Encontre sua próxima oportunidade</p></div><div className="flex gap-2"><button className="rounded-md px-4 py-2 text-sm font-medium text-primary" onClick={() => navigate('/login')}>Entrar</button><button className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground" onClick={() => navigate('/cadastro')}>Criar conta</button></div></div></header><div className="mx-auto max-w-7xl space-y-6 px-4 py-8"><div><h1 className="font-poppins text-3xl font-semibold">Buscar vagas</h1><p className="text-muted-foreground">Explore oportunidades sem precisar entrar.</p></div><JobsSearch jobs={jobs} applications={[]} onApply={applyToJob} /></div></main>
       ) : isCollaborator ? (
         <CollaboratorShell
-          user={colaboradorUser}
-          notifications={notifications}
+          user={account}
+          notifications={0}
           notificationItems={notificationItems}
-          onMarkNotificationsRead={markNotificationsRead}
+          onMarkNotificationsRead={() => {}}
           onLogout={handleLogout}
           view={adminView}
           onNavigate={setAdminView}
@@ -265,18 +316,23 @@ export default function App() {
           {adminView === 'team' && <Team />}
           {adminView === 'settings' && <Settings />}
         </CollaboratorShell>
+      ) : route === '/cadastro-curriculo' || (resumeLoaded && resumeOwner === account.id && user.profileProgress === 0) ? (
+        resumeLoaded && resume && resumeOwner === account.id
+          ? <ResumeOnboarding user={user} resume={resume} onSaveItem={handleSaveResumeItem} onDeleteItem={handleDeleteResumeItem} onSaveProfessional={handleSaveProfessional} onFinish={handleFinishOnboarding} onLogout={handleLogout} />
+          : <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">Carregando currículo...</div>
       ) : (
         <AppShell
           tabs={candidateTabs}
           activeTab={activeTab}
           onTabChange={setActiveTab}
           user={user}
-          notifications={notifications}
+          notifications={notificationItems.filter((item) => !item.lida).length}
           notificationItems={notificationItems}
-          onMarkNotificationsRead={markNotificationsRead}
+          onMarkNotificationsRead={markAllRead}
+          onOpenMessages={() => setActiveTab('messages')}
           onLogout={handleLogout}
         >
-          {activeTab === 'jobs' && <JobsSearch jobs={jobs} applications={applications} onApply={applyToJob} />}
+          {activeTab === 'jobs' && <JobsSearch jobs={jobs} applications={applications} onApply={applyToJob} candidateAreas={candidateAreas} />}
           {activeTab === 'applications' && (
             <Applications
               applications={applications}
@@ -287,15 +343,17 @@ export default function App() {
             />
           )}
           {activeTab === 'profile' && (resumeLoaded && resume && resumeOwner === account.id
-            ? <ProfileRegistration key={user.id} user={user} onSave={handleProfileSave} onLogout={handleLogout} onUploadAvatar={handleUploadAvatar} onRemoveAvatar={handleRemoveAvatar} onOpenPcd={handleOpenPcd} />
+            ? <ProfileRegistration key={user.id} user={user} onSave={handleProfileSave} onLogout={handleLogout} onOpenPcd={handleOpenPcd} />
             : <p className="p-5 text-sm text-muted-foreground">Carregando perfil...</p>)}
           {activeTab === 'resumes' && (resumeLoaded && resume && resumeOwner === account.id
             ? <Resume user={user} resume={resume} onSaveItem={handleSaveResumeItem} onDeleteItem={handleDeleteResumeItem} onSaveProfessional={handleSaveProfessional} />
             : <p className="p-5 text-sm text-muted-foreground">Carregando currículo...</p>)}
           {activeTab === 'settings' && <CandidateSettings onNavigate={setActiveTab} />}
           {activeTab === 'support' && <CandidateSupport />}
+          {activeTab === 'messages' && <CandidateMessages items={notificationItems} onMarkRead={markRead} />}
         </AppShell>
       )}
+      </TooltipProvider>
     </ThemeProvider>
   )
 }

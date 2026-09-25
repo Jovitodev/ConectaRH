@@ -28,9 +28,11 @@ import {
 } from '@/components/ui/hover-card'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { sectors } from '@/data/mockData.js'
+import { jobAreas, enrollmentStatus, matchesJobFilters } from '@/lib/jobSearchRules.js'
 
-const locations = ['SP', 'RJ', 'Remoto']
 const models = ['Presencial', 'Híbrido', 'Remoto']
+const allAreaLabels = [...sectors.map((area) => area.label), 'Tecnologia', 'Recursos Humanos', 'Administrativo']
+const dateLabel = (date) => date ? `${date.slice(8, 10)}/${date.slice(5, 7)}/${date.slice(0, 4)}` : 'não informado'
 
 const sectorBadgeVariant = {
   saude: 'info',
@@ -46,11 +48,11 @@ const modelBadgeVariant = {
   Remoto: 'success',
 }
 
-export default function JobsSearch({ jobs, applications, onApply }) {
+export default function JobsSearch({ jobs, applications, onApply, candidateAreas = [] }) {
   const [search, setSearch] = useState('')
-  const [location, setLocation] = useState('all')
+  const [location, setLocation] = useState('')
   const [model, setModel] = useState('all')
-  const [sector, setSector] = useState('all')
+  const [selectedAreas, setSelectedAreas] = useState([])
   const [detailJob, setDetailJob] = useState(null)
   const [loading, setLoading] = useState(false)
 
@@ -58,39 +60,30 @@ export default function JobsSearch({ jobs, applications, onApply }) {
     setLoading(true)
     const t = setTimeout(() => setLoading(false), 400)
     return () => clearTimeout(t)
-  }, [search, location, model, sector])
+  }, [search, location, model, selectedAreas])
 
   const filteredJobs = useMemo(() => {
-    return jobs.filter((job) => {
-      const q = search.trim().toLowerCase()
-      if (q && !`${job.title} ${job.company}`.toLowerCase().includes(q)) return false
-      if (location !== 'all') {
-        const hasLocation = location === 'Remoto' ? job.model === 'Remoto' : job.location.includes(location)
-        if (!hasLocation) return false
-      }
-      if (model !== 'all' && job.model !== model) return false
-      if (sector !== 'all' && job.sector !== sector) return false
-      return true
-    })
-  }, [jobs, search, location, model, sector])
+    return jobs.filter((job) => matchesJobFilters(job, { search, location, model, areas: selectedAreas }, sectors))
+  }, [jobs, search, location, model, selectedAreas])
 
   const isApplied = (jobId) => applications.some((a) => a.jobId === jobId)
 
   const clearFilters = () => {
     setSearch('')
-    setLocation('all')
+    setLocation('')
     setModel('all')
-    setSector('all')
+    setSelectedAreas([])
   }
 
-  const hasFilters = search || location !== 'all' || model !== 'all' || sector !== 'all'
+  const hasFilters = search || location || model !== 'all' || selectedAreas.length > 0
 
   const quickApply = (job) => {
+    if (enrollmentStatus(job) !== 'aberta') return toast.error('Esta vaga está fora do período de inscrição.')
     if (isApplied(job.id)) {
       toast.info('Candidatura já realizada', { description: 'Você já está concorrendo a esta vaga.' })
       return
     }
-    onApply(job.id)
+    if (onApply(job.id) === false) return
     toast.success('Candidatura confirmada!', { description: `Você se candidatou a "${job.title}" na ${job.company}.` })
   }
 
@@ -119,17 +112,7 @@ export default function JobsSearch({ jobs, applications, onApply }) {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Select value={location} onValueChange={setLocation}>
-              <SelectTrigger className="w-40">
-                <SelectValue placeholder="Localização" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos os locais</SelectItem>
-                {locations.map((l) => (
-                  <SelectItem key={l} value={l}>{l}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Input aria-label="Localidade" className="w-44" value={location} onChange={(event) => setLocation(event.target.value)} placeholder="Cidade ou estado" />
             <Select value={model} onValueChange={setModel}>
               <SelectTrigger className="w-40">
                 <SelectValue placeholder="Modelo" />
@@ -145,24 +128,8 @@ export default function JobsSearch({ jobs, applications, onApply }) {
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-2">
-          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Setor</span>
-          <Badge
-            variant={sector === 'all' ? 'default' : 'outline'}
-            className="cursor-pointer"
-            onClick={() => setSector('all')}
-          >
-            Todos
-          </Badge>
-          {sectors.map((s) => (
-            <Badge
-              key={s.id}
-              variant={sector === s.id ? 'default' : 'outline'}
-              className="cursor-pointer"
-              onClick={() => setSector(s.id)}
-            >
-              {s.label}
-            </Badge>
-          ))}
+          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Áreas</span>
+          {allAreaLabels.map((area) => <label key={area} className="flex items-center gap-1 rounded-full border px-3 py-1 text-xs"><input type="checkbox" checked={selectedAreas.includes(area)} onChange={() => setSelectedAreas((current) => current.includes(area) ? current.filter((value) => value !== area) : [...current, area])} />{area}</label>)}
           {hasFilters && (
             <Button variant="ghost" size="sm" onClick={clearFilters} className="ml-auto text-muted-foreground">
               <X className="h-3.5 w-3.5" /> Limpar
@@ -200,7 +167,8 @@ export default function JobsSearch({ jobs, applications, onApply }) {
             return (
               <Card key={job.id} className="flex flex-col rounded-xl border-slate-200 p-5 transition-all hover:border-primary/40 hover:shadow-soft">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant={sectorBadgeVariant[job.sector]}>{sectors.find((s) => s.id === job.sector)?.label}</Badge>
+                  {jobAreas(job, sectors).map((area) => <Badge key={area} variant={sectorBadgeVariant[job.sector]}>{area}</Badge>)}
+                  {candidateAreas.some((area) => jobAreas(job, sectors).includes(area)) && <Badge variant="success">Combina com suas áreas</Badge>}
                   <Badge variant={modelBadgeVariant[job.model]}>{job.model}</Badge>
                   {applied && (
                     <Badge variant="success">
@@ -241,6 +209,7 @@ export default function JobsSearch({ jobs, applications, onApply }) {
                   <p className="flex items-center gap-1.5">
                     <Clock className="h-3.5 w-3.5 shrink-0" /> {job.postedAt} · {job.type}
                   </p>
+                  <p>Inscrições: {dateLabel(job.applicationStart)} a {dateLabel(job.applicationEnd)} · {enrollmentStatus(job)}</p>
                 </div>
 
                 <div className="mt-5 flex flex-1 items-end gap-2">
@@ -256,11 +225,11 @@ export default function JobsSearch({ jobs, applications, onApply }) {
                     size="sm"
                     className="flex-1"
                     variant={applied ? 'outline' : 'default'}
-                    disabled={applied}
+                    disabled={applied || enrollmentStatus(job) !== 'aberta'}
                     onClick={() => quickApply(job)}
                   >
                     {applied ? <Check className="h-3.5 w-3.5" /> : <ArrowRight className="h-3.5 w-3.5" />}
-                    {applied ? 'Candidatado' : 'Candidatar-se'}
+                    {applied ? 'Candidatado' : enrollmentStatus(job) === 'aberta' ? 'Candidatar-se' : 'Inscrições indisponíveis'}
                   </Button>
                 </div>
               </Card>
@@ -278,7 +247,7 @@ export default function JobsSearch({ jobs, applications, onApply }) {
                 <DialogTitle>{detailJob.title}</DialogTitle>
                 <DialogDescription className="flex flex-wrap items-center gap-2">
                   <span className="font-medium text-foreground">{detailJob.company}</span>
-                  <Badge variant={sectorBadgeVariant[detailJob.sector]}>{sectors.find((s) => s.id === detailJob.sector)?.label}</Badge>
+                  {jobAreas(detailJob, sectors).map((area) => <Badge key={area} variant={sectorBadgeVariant[detailJob.sector]}>{area}</Badge>)}
                   <Badge variant={modelBadgeVariant[detailJob.model]}>{detailJob.model}</Badge>
                 </DialogDescription>
               </DialogHeader>
@@ -291,6 +260,7 @@ export default function JobsSearch({ jobs, applications, onApply }) {
                   <Banknote className="h-3.5 w-3.5 text-emerald-500" /> <span className="font-medium">{detailJob.salary}</span>
                 </span>
               </div>
+              <Card className="p-3 text-sm"><p className="font-medium">Período de inscrição</p><p>{dateLabel(detailJob.applicationStart)} até {dateLabel(detailJob.applicationEnd)} · {enrollmentStatus(detailJob)}</p></Card>
 
               <div className="space-y-4">
                 <div>
@@ -321,7 +291,7 @@ export default function JobsSearch({ jobs, applications, onApply }) {
               <DialogFooter>
                 <Button variant="outline" onClick={() => setDetailJob(null)}>Fechar</Button>
                 <Button
-                  disabled={isApplied(detailJob.id)}
+                  disabled={isApplied(detailJob.id) || enrollmentStatus(detailJob) !== 'aberta'}
                   onClick={() => {
                     quickApply(detailJob)
                     setDetailJob(null)
