@@ -32,6 +32,7 @@ import { readStore, writeStore, uid } from '@/lib/localStore.js'
 import { loadCandidateResume, importLocalResumes, saveResumeItem, deleteResumeItem, saveProfessionalData, savePcdProfile, completeInitialResume } from '@/lib/candidateStore.js'
 import { uploadPcdPdf, removePcdPdf, signedPcdUrl } from '@/lib/profileFiles.js'
 import { loadAreas, loadNotifications, markNotificationsRead } from '@/lib/candidateExtras.js'
+import { syncCandidateCompleteness } from '@/lib/candidateCompleteness.js'
 import { enrollmentStatus } from '@/lib/jobSearchRules.js'
 
 import {
@@ -91,8 +92,8 @@ export default function App() {
 
   useEffect(() => {
     if (!account || account.account === 'colaborador') return
-    loadNotifications().then(setNotificationItems).catch((error) => toast.error('Não foi possível carregar mensagens: ' + error.message))
-  }, [account?.id])
+    syncCandidateCompleteness().then(loadNotifications).then(setNotificationItems).catch((error) => toast.error('Não foi possível atualizar mensagens: ' + error.message))
+  }, [account?.id, user?.id, user?.profileProgress, resume])
 
   useEffect(() => {
     if (!account || account.account === 'colaborador' || activeTab !== 'jobs') return
@@ -247,6 +248,13 @@ export default function App() {
     setNotificationItems((prev) => prev.map((item) => ids.includes(item.id) ? { ...item, lida: true } : item))
   }
   const markAllRead = () => markRead(notificationItems.filter((item) => !item.lida).map((item) => item.id))
+  const refreshNotifications = async () => { await syncCandidateCompleteness(); setNotificationItems(await loadNotifications()) }
+  const openNotification = async (item) => {
+    if (!item.lida) await markRead([item.id])
+    const [destination, section] = (item.destino || '').split(':')
+    if (destination === 'profile') setActiveTab('profile')
+    if (destination === 'resume') { setActiveTab('resumes'); if (section) setTimeout(() => document.querySelector(`[data-resume-section="${section}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100) }
+  }
 
   const handleLogout = async () => {
     try { await signOut() }
@@ -269,9 +277,12 @@ export default function App() {
     else navigate('/')
   }
 
-  const handleFinishOnboarding = async (redirect = false) => {
-    if (redirect) { setUser((previous) => ({ ...previous, profileProgress: 100 })); setPendingJobId(null); navigate('/'); return }
+  const handleFinishOnboarding = async (redirect = false, verified = null) => {
+    if (redirect) { if (verified?.user) { setUser(verified.user); setResume(verified.resume) }; setPendingJobId(null); navigate('/'); return }
     await completeInitialResume()
+    const reloaded = await loadCandidateResume()
+    if (reloaded.user.profileProgress !== 100 || !reloaded.user.cityId || !reloaded.user.stateId) throw new Error('O currículo não foi confirmado após recarregar os dados do banco.')
+    return reloaded
   }
 
   const isCollaborator = account?.account === 'colaborador'
@@ -318,7 +329,7 @@ export default function App() {
         </CollaboratorShell>
       ) : route === '/cadastro-curriculo' || (resumeLoaded && resumeOwner === account.id && user.profileProgress === 0) ? (
         resumeLoaded && resume && resumeOwner === account.id
-          ? <ResumeOnboarding user={user} resume={resume} onSaveItem={handleSaveResumeItem} onDeleteItem={handleDeleteResumeItem} onSaveProfessional={handleSaveProfessional} onFinish={handleFinishOnboarding} onLogout={handleLogout} />
+          ? <ResumeOnboarding user={user} resume={resume} onSaveItem={handleSaveResumeItem} onDeleteItem={handleDeleteResumeItem} onSaveProfessional={handleSaveProfessional} onRefreshNotifications={refreshNotifications} onFinish={handleFinishOnboarding} onLogout={handleLogout} />
           : <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">Carregando currículo...</div>
       ) : (
         <AppShell
@@ -346,11 +357,11 @@ export default function App() {
             ? <ProfileRegistration key={user.id} user={user} onSave={handleProfileSave} onLogout={handleLogout} onOpenPcd={handleOpenPcd} />
             : <p className="p-5 text-sm text-muted-foreground">Carregando perfil...</p>)}
           {activeTab === 'resumes' && (resumeLoaded && resume && resumeOwner === account.id
-            ? <Resume user={user} resume={resume} onSaveItem={handleSaveResumeItem} onDeleteItem={handleDeleteResumeItem} onSaveProfessional={handleSaveProfessional} />
+            ? <Resume user={user} resume={resume} onSaveItem={handleSaveResumeItem} onDeleteItem={handleDeleteResumeItem} onSaveProfessional={handleSaveProfessional} onRefreshNotifications={refreshNotifications} />
             : <p className="p-5 text-sm text-muted-foreground">Carregando currículo...</p>)}
           {activeTab === 'settings' && <CandidateSettings onNavigate={setActiveTab} />}
           {activeTab === 'support' && <CandidateSupport />}
-          {activeTab === 'messages' && <CandidateMessages items={notificationItems} onMarkRead={markRead} />}
+          {activeTab === 'messages' && <CandidateMessages items={notificationItems} onMarkRead={markRead} onOpen={openNotification} />}
         </AppShell>
       )}
       </TooltipProvider>

@@ -1,5 +1,8 @@
--- ConectaRH / Supabase PostgreSQL
--- Schema inicial para produção. Execute após revisar nomes/regras do negócio.
+-- HISTÓRICO / NÃO EXECUTAR NO PROJETO ATUAL.
+-- Esta proposta descreve profiles/candidate_profiles/vacancies que NÃO
+-- correspondem ao Supabase em uso (usuarios/candidatos/areas/notificacoes).
+-- Consulte docs/AUDITORIA_2026-10-05.md antes de planejar migrações.
+-- ConectaRH / Supabase PostgreSQL: proposta antiga, preservada como referência.
 
 create extension if not exists pgcrypto;
 

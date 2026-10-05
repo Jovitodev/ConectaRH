@@ -1,5 +1,5 @@
 import { supabase } from './supabase.js'
-import { onlyDigits, validPhone } from './inputMasks.js'
+import { onlyDigits, validCpf, validPhone } from './inputMasks.js'
 import { validatePassword } from './passwordRules.js'
 
 export async function signIn(email, password) {
@@ -186,7 +186,7 @@ export async function updateCurrentProfile(updates) {
 
   if (updates.cpf !== undefined) {
     const cpf = onlyDigits(updates.cpf)
-    if (cpf && cpf.length !== 11) throw new Error('O CPF deve ter 11 dígitos.')
+    if (cpf && !validCpf(cpf)) throw new Error('Informe um CPF válido, incluindo os dígitos verificadores.')
     usuarioUpdates.cpf = cpf || null
   }
 
@@ -206,9 +206,12 @@ export async function updateCurrentProfile(updates) {
     .from('usuarios')
     .update(usuarioUpdates)
     .eq('auth_user_id', session.user.id)
+    .select('id')
+    .single()
 
   if (error) {
     console.error(error)
+    if (error.code === '23505' && /cpf/i.test(error.message || '')) throw new Error('Este CPF já está cadastrado em outra conta.')
     throw new Error('Não foi possível atualizar o perfil.')
   }
 
@@ -332,6 +335,8 @@ export async function updateCurrentCandidate(updates) {
     .from('candidatos')
     .update(candidatoUpdates)
     .eq('usuario_id', usuario.id)
+    .select('id')
+    .single()
 
   if (error) {
     console.error(error)

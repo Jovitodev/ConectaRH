@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Search, MapPin, Banknote, Building2, Clock, Check, Briefcase, Eye, ArrowRight, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -29,6 +29,8 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { sectors } from '@/data/mockData.js'
 import { jobAreas, enrollmentStatus, matchesJobFilters } from '@/lib/jobSearchRules.js'
+import LocationFields from '@/components/LocationFields.jsx'
+import { maskSalaryInput, parseSalary } from '@/lib/inputMasks.js'
 
 const models = ['Presencial', 'Híbrido', 'Remoto']
 const allAreaLabels = [...sectors.map((area) => area.label), 'Tecnologia', 'Recursos Humanos', 'Administrativo']
@@ -50,7 +52,11 @@ const modelBadgeVariant = {
 
 export default function JobsSearch({ jobs, applications, onApply, candidateAreas = [] }) {
   const [search, setSearch] = useState('')
-  const [location, setLocation] = useState('')
+  const [locality, setLocality] = useState({ state: '', stateId: null, city: '', cityId: null })
+  const updateLocality = useCallback((patch) => setLocality((current) => ({ ...current, ...patch })), [])
+  const [salaryMin, setSalaryMin] = useState('')
+  const [salaryMax, setSalaryMax] = useState('')
+  const invalidSalaryRange = salaryMin && salaryMax && parseSalary(salaryMin) > parseSalary(salaryMax)
   const [model, setModel] = useState('all')
   const [selectedAreas, setSelectedAreas] = useState([])
   const [detailJob, setDetailJob] = useState(null)
@@ -60,22 +66,25 @@ export default function JobsSearch({ jobs, applications, onApply, candidateAreas
     setLoading(true)
     const t = setTimeout(() => setLoading(false), 400)
     return () => clearTimeout(t)
-  }, [search, location, model, selectedAreas])
+  }, [search, locality, model, selectedAreas, salaryMin, salaryMax])
 
   const filteredJobs = useMemo(() => {
-    return jobs.filter((job) => matchesJobFilters(job, { search, location, model, areas: selectedAreas }, sectors))
-  }, [jobs, search, location, model, selectedAreas])
+    if (invalidSalaryRange) return []
+    return jobs.filter((job) => matchesJobFilters(job, { search, state: locality.stateId ? locality.state : '', city: locality.cityId ? locality.city : '', model, areas: selectedAreas, salaryMin: parseSalary(salaryMin), salaryMax: parseSalary(salaryMax) }, sectors))
+  }, [jobs, search, locality, model, selectedAreas, salaryMin, salaryMax, invalidSalaryRange])
 
   const isApplied = (jobId) => applications.some((a) => a.jobId === jobId)
 
   const clearFilters = () => {
     setSearch('')
-    setLocation('')
+    setLocality({ state: '', stateId: null, city: '', cityId: null })
+    setSalaryMin('')
+    setSalaryMax('')
     setModel('all')
     setSelectedAreas([])
   }
 
-  const hasFilters = search || location || model !== 'all' || selectedAreas.length > 0
+  const hasFilters = search || locality.state || locality.city || salaryMin || salaryMax || model !== 'all' || selectedAreas.length > 0
 
   const quickApply = (job) => {
     if (enrollmentStatus(job) !== 'aberta') return toast.error('Esta vaga está fora do período de inscrição.')
@@ -111,10 +120,10 @@ export default function JobsSearch({ jobs, applications, onApply, candidateAreas
             )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <Input aria-label="Localidade" className="w-44" value={location} onChange={(event) => setLocation(event.target.value)} placeholder="Cidade ou estado" />
+          <div className="grid min-w-0 flex-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            <LocationFields value={locality} onChange={updateLocality} idPrefix="job-filter" />
             <Select value={model} onValueChange={setModel}>
-              <SelectTrigger className="w-40">
+              <SelectTrigger className="w-full">
                 <SelectValue placeholder="Modelo" />
               </SelectTrigger>
               <SelectContent>
@@ -126,6 +135,8 @@ export default function JobsSearch({ jobs, applications, onApply, candidateAreas
             </Select>
           </div>
         </div>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2"><Input aria-label="Salário mínimo" inputMode="numeric" value={salaryMin} onChange={(event) => setSalaryMin(maskSalaryInput(event.target.value))} placeholder="Salário mínimo" /><Input aria-label="Salário máximo" inputMode="numeric" value={salaryMax} onChange={(event) => setSalaryMax(maskSalaryInput(event.target.value))} placeholder="Salário máximo" /></div>
+        {invalidSalaryRange && <p className="mt-2 text-xs text-destructive">O salário máximo deve ser maior ou igual ao mínimo.</p>}
 
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Áreas</span>
@@ -140,7 +151,7 @@ export default function JobsSearch({ jobs, applications, onApply, candidateAreas
 
       {/* Grid de vagas */}
       {loading ? (
-        <div className="grid w-full grid-cols-[repeat(auto-fit,minmax(300px,1fr))] gap-4">
+        <div className="grid w-full grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))] gap-4">
           {Array.from({ length: 6 }).map((_, i) => (
             <Card key={i} className="space-y-3 p-5">
               <div className="flex gap-2">
@@ -161,7 +172,7 @@ export default function JobsSearch({ jobs, applications, onApply, candidateAreas
           <p className="text-xs text-muted-foreground">Ajuste os filtros ou limpe a busca.</p>
         </Card>
       ) : (
-        <div className="grid w-full grid-cols-[repeat(auto-fit,minmax(300px,1fr))] gap-4">
+        <div className="grid w-full grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))] gap-4">
           {filteredJobs.map((job) => {
             const applied = isApplied(job.id)
             return (

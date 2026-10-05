@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
 import { ArrowLeft, Check, Plus, Trash2, Save, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -14,6 +14,8 @@ import { PageHeader } from '@/components/admin-ui.jsx'
 import { jobTemplates, adminJobs } from '@/data/adminData.js'
 import { readStore, writeStore, uid } from '@/lib/localStore.js'
 import { sectors } from '@/data/mockData.js'
+import LocationFields from '@/components/LocationFields.jsx'
+import { maskSalaryInput, parseSalary } from '@/lib/inputMasks.js'
 
 const areaChoices = [...sectors.map((area) => area.label), 'Tecnologia', 'Recursos Humanos', 'Administrativo']
 
@@ -33,7 +35,7 @@ export default function CreateVacancy({ onBack, onDone }) {
     areas: [],
     applicationStart: '',
     applicationEnd: '',
-    location: '',
+    state: '', stateId: null, city: '', cityId: null,
     model: 'Presencial',
     type: 'CLT',
     description: '',
@@ -49,6 +51,7 @@ export default function CreateVacancy({ onBack, onDone }) {
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
   const setRaw = (k, v) => setForm((f) => ({ ...f, [k]: v }))
+  const updateLocation = useCallback((patch) => setForm((current) => ({ ...current, ...patch })), [])
 
   const setRequirement = (i, value) => {
     setForm((f) => ({ ...f, requirements: f.requirements.map((r, j) => (j === i ? value : r)) }))
@@ -91,8 +94,8 @@ export default function CreateVacancy({ onBack, onDone }) {
       toast.error('Informe o título da vaga.')
       return false
     }
-    if (!form.location.trim()) {
-      toast.error('Informe a localização.')
+    if (!form.cityId || !form.stateId) {
+      toast.error('Selecione estado e cidade da lista.')
       return false
     }
     if (!form.areas.length) { toast.error('Selecione ao menos uma área.'); return false }
@@ -101,7 +104,7 @@ export default function CreateVacancy({ onBack, onDone }) {
   }
 
   const validateStep2 = () => {
-    if (!form.salaryMin || !form.salaryMax) {
+    if (!form.salaryMin || !form.salaryMax || parseSalary(form.salaryMin) > parseSalary(form.salaryMax)) {
       toast.error('Preencha a faixa salarial.')
       return false
     }
@@ -115,12 +118,13 @@ export default function CreateVacancy({ onBack, onDone }) {
   }
 
   const save = () => {
+    if (!validateStep1() || !validateStep2()) return
     const saved = readStore('admin.vacancies', adminJobs)
     const newJob = {
       id: uid('job'), code: `VAG-${String(saved.length + 1).padStart(4, '0')}`, title: form.title, company: form.company, department: form.department,
-      location: form.location, areas: form.areas, applicationStart: form.applicationStart, applicationEnd: form.applicationEnd, model: form.model, type: form.type, description: form.description, requirements: form.requirements.filter(Boolean),
+      location: `${form.city}, ${form.state}`, stateId: form.stateId, cityId: form.cityId, areas: form.areas, applicationStart: form.applicationStart, applicationEnd: form.applicationEnd, model: form.model, type: form.type, description: form.description, requirements: form.requirements.filter(Boolean),
       benefits: form.benefits.filter(Boolean), pipeline: { steps: form.pipeline.filter(Boolean), totalSteps: form.pipeline.filter(Boolean).length },
-      salary: { min: Number(form.salaryMin) || 0, max: Number(form.salaryMax) || 0 }, status: form.published ? 'ativa' : 'rascunho', visibility: form.visibility,
+      salary: { min: parseSalary(form.salaryMin) || 0, max: parseSalary(form.salaryMax) || 0 }, status: form.published ? 'ativa' : 'rascunho', visibility: form.visibility,
       recruiter: 'Marina Duarte', candidates: 0, openDays: 0, priority: 'normal', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     }
     writeStore('admin.vacancies', [newJob, ...saved])
@@ -194,10 +198,7 @@ export default function CreateVacancy({ onBack, onDone }) {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="v-loc">Localização *</Label>
-                <Input id="v-loc" value={form.location} onChange={set('location')} placeholder="São Paulo, SP" />
-              </div>
+              <LocationFields value={form} onChange={updateLocation} idPrefix="vacancy" />
               <fieldset className="space-y-2 sm:col-span-2"><legend className="text-sm font-medium">Áreas da vaga *</legend><p className="text-xs text-muted-foreground">Selecione uma ou mais áreas.</p><div className="flex flex-wrap gap-2">{areaChoices.map((area) => <label key={area} className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm"><input type="checkbox" checked={form.areas.includes(area)} onChange={() => setForm((current) => ({ ...current, areas: current.areas.includes(area) ? current.areas.filter((value) => value !== area) : [...current.areas, area] }))} />{area}</label>)}</div></fieldset>
               <div className="space-y-1.5"><Label htmlFor="v-application-start">Início das inscrições *</Label><Input id="v-application-start" type="date" value={form.applicationStart} onChange={set('applicationStart')} /></div>
               <div className="space-y-1.5"><Label htmlFor="v-application-end">Fim das inscrições *</Label><Input id="v-application-end" type="date" value={form.applicationEnd} onChange={set('applicationEnd')} /></div>
@@ -266,11 +267,11 @@ export default function CreateVacancy({ onBack, onDone }) {
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label htmlFor="v-smin">Salário mínimo (R$) *</Label>
-                  <Input id="v-smin" type="number" value={form.salaryMin} onChange={set('salaryMin')} placeholder="8500" />
+                  <Input id="v-smin" inputMode="numeric" value={form.salaryMin} onChange={(event) => setRaw('salaryMin', maskSalaryInput(event.target.value))} placeholder="R$ 8.500,00" />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="v-smax">Salário máximo (R$) *</Label>
-                  <Input id="v-smax" type="number" value={form.salaryMax} onChange={set('salaryMax')} placeholder="11000" />
+                  <Input id="v-smax" inputMode="numeric" value={form.salaryMax} onChange={(event) => setRaw('salaryMax', maskSalaryInput(event.target.value))} placeholder="R$ 11.000,00" />
                 </div>
               </div>
             </CardContent>

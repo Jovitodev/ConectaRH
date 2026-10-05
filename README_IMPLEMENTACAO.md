@@ -1,4 +1,6 @@
-# ConectaRH — implementação das novas funcionalidades
+# ConectaRH — registro histórico de implementação
+
+> **Documento histórico.** As descrições abaixo correspondem a uma fase anterior do protótipo. A autenticação atual usa Supabase Auth, e não há senhas de demonstração válidas no código. Consulte [a auditoria atual](docs/AUDITORIA_2026-10-05.md). Não execute `supabase/schema.sql` no projeto conectado.
 
 Esta versão transforma o protótipo em um MVP local persistente, preparado para migração para Supabase.
 

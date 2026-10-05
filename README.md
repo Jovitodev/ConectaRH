@@ -1,63 +1,32 @@
-# 🚀 ConectaRH — ATS & Portal de Carreiras
+# ConectaRH
 
-O **ConectaRH** é um ecossistema completo de recrutamento e seleção (ATS - *Applicant Tracking System*) desenhado para unir candidatos às melhores oportunidades de tecnologia e gestão. O sistema conta com uma experiência bifurcada em dois perfis de acesso (**Candidato** e **Colaborador/Recrutador**), construído com uma interface moderna, intuitiva e acessível em **React, Tailwind CSS e shadcn/ui**[cite: 4].
+Portal React/Vite com Home pública, área do candidato e painel do colaborador.
 
----
+## Estado atual
 
-## 🎨 Identidade Visual & UI/UX
+- Supabase Auth: login, cadastro, logout e recuperação de senha. A role `app_metadata.role=colaborador` direciona para o painel.
+- Supabase Database: `usuarios`, `candidatos`, seções do currículo, `areas`, `candidato_areas` e `notificacoes`.
+- Supabase Storage: comprovantes PCD privados. O bucket de avatares é legado e permanece preservado.
+- Mock/localStorage: vagas, candidaturas e a maior parte do painel do colaborador. As duas listas de vagas ainda não são uma fonte única.
 
-A plataforma utiliza um design *clean* baseado na nova paleta de cores institucional[cite: 6]:
-* **Background:** Tom suave em cinza/azul claríssimo (`#F4F7FB` / `#F8FAFC`)[cite: 6].
-* **Cards & Elevação:** Brancos (`#FFFFFF`) com bordas sutis (`#E2E8F0`) e sombras leves[cite: 6, 7].
-* **Ações Principais (CTA):** Azul Sereno/Vibrante (`#00A3E0` / `#0284C7`)[cite: 6, 7].
-* **Acompanhamento de Status:** Verde Esmeralda (`#10B981` / `#059669`) para barras de progresso e etapas concluídas[cite: 7].
+## Executar localmente
 
----
+Configure `.env` com `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` (chave publicável). Nunca coloque uma chave `service_role` no frontend. Depois:
 
-## ✨ Funcionalidades Principais
+```bash
+npm install
+npm run dev
+npm run build
+```
 
-### 👤 Perfil do Candidato
-* **Autenticação & Registro:** Login simplificado e cadastro profissional[cite: 6].
-* **Busca de Vagas:** Filtros dinâmicos por setor, modalidade (Presencial, Híbrido, Remoto) e tipo de contrato (CLT, PJ)[cite: 7].
-* **Candidatura Rápida:** Submissão de currículo em 1 clique[cite: 7].
-* **Minhas Candidaturas:** Acompanhamento em tempo real do status do processo seletivo através da barra de progresso do pipeline[cite: 7].
-* **Gestão de Currículo:** Cadastro estruturado de dados pessoais, formação acadêmica, experiências e certificados[cite: 7].
+## Estrutura
 
-### 💼 Perfil do Colaborador (Recrutador / Gestor)
-* **Dashboard Analítico:** Indicadores estratégicos de RH (Time-to-Hire, funil de conversão e métricas de contratação)[cite: 4].
-* **Gestão de Vagas:** Criação, edição, templates de vagas e controle de status (Rascunho, Publicada, Pausada, Encerrada)[cite: 4].
-* **Base Geral de Candidatos:** Tabela avançada (`Data Table`) com busca por CPF, e-mail e nome[cite: 4].
-* **Perfil Detalhado & Avaliação:** Análise de competências, notas de feedback e painel de ações (Aprovar, Reprovar, Enviar Proposta)[cite: 4].
-* **Kanban de Seleção:** Quadro visual interativo para gestão do funil de candidatos (*Triagem, Teste, Entrevista RH, Entrevista Gestor, Proposta*)[cite: 4].
-* **Agendamento & Agenda:** Gestão de entrevistas, links de reunião e controle de pendências[cite: 4].
-* **Governança & LGPD:** Ferramenta de anonimização irreversível de dados de candidatos e gestão de papéis da equipe[cite: 4].
+- `src/App.jsx`: rotas por `pathname` e estados das abas.
+- `src/pages/`: páginas públicas e do candidato; `src/pages/admin/`: painel do colaborador.
+- `src/lib/authStore.js`: Supabase Auth e perfil.
+- `src/lib/candidateStore.js`, `candidateExtras.js`, `profileFiles.js`: dados do candidato no Supabase.
+- `src/data/mockData.js`, `adminData.js`, `src/lib/localStore.js`: dados demonstrativos e armazenamento local.
 
----
+Rotas principais: `/`, `/login`, `/cadastro`, `/cadastro-curriculo`, `/colaborador/login`. As abas internas não possuem URLs próprias.
 
-## 🛠️ Tecnologias Utilizadas
-
-* **Core:** React 18 / Vite
-* **Estilização:** Tailwind CSS
-* **Componentes UI:** [shadcn/ui](https://ui.shadcn.com/) / Radix UI
-* **Ícones:** Lucide React
-* **Gerenciamento de Formulários & Estados:** React Hook Form, Zod
-
----
-
-## 🔑 Acesso Rápido para Demonstração (Logins Mockados)
-
-Ao acessar a tela de login, podes utilizar as seguintes credenciais de teste:
-
-| Perfil | E-mail | Acesso |
-| :--- | :--- | :--- |
-| **Candidato** | `candidato@conectarh.com` | Portal de Vagas, Candidaturas e Currículo[cite: 4] |
-| **Colaborador** | `colaborador@conectarh.com` | Painel Administrativo, Kanban, Vagas e Relatórios[cite: 4] |
-
----
-
-## 📦 Como Executar o Projeto Localmente
-
-1. **Clona o repositório:**
-   ```bash
-   git clone [https://github.com/teu-usuario/conecta-rh.git](https://github.com/teu-usuario/conecta-rh.git)
-   cd conecta-rh
+Leia [a auditoria técnica de 05/10/2026](docs/AUDITORIA_2026-10-05.md) antes de ampliar o esquema ou migrar vagas/candidaturas. `supabase/schema.sql` é um protótipo histórico incompatível com o banco conectado: **não execute esse arquivo**.

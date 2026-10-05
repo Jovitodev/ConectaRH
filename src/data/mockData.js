@@ -205,7 +205,10 @@ export const jobs = [
       steps: pipelineTemplates.logistica,
     },
   },
-].map((job) => ({ ...job, areas: [sectors.find((area) => area.id === job.sector)?.label].filter(Boolean), applicationStart: '2026-09-01', applicationEnd: '2026-10-31' }))
+].map((job) => {
+  const amounts = [...job.salary.matchAll(/R\$\s*([\d.]+)/g)].map((match) => Number(match[1].replaceAll('.', '')))
+  return { ...job, areas: [sectors.find((area) => area.id === job.sector)?.label].filter(Boolean), salaryMin: amounts[0] || null, salaryMax: amounts[1] || amounts[0] || null, applicationStart: '2026-09-01', applicationEnd: '2026-10-31' }
+})
 
 export const initialApplications = [
   {

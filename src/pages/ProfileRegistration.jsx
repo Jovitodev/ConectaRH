@@ -5,7 +5,7 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { resetPassword } from '@/lib/authStore.js'
-import { maskCpf, maskPhone, onlyDigits, validPhone } from '@/lib/inputMasks.js'
+import { maskCpf, maskPhone, validCpf, validPhone } from '@/lib/inputMasks.js'
 import { validatePcd } from '@/lib/pcdRules.js'
 import { PasswordRequirements } from '@/components/PasswordRequirements.jsx'
 import { validatePassword } from '@/lib/passwordRules.js'
@@ -30,7 +30,11 @@ export default function ProfileRegistration({ user, onSave, onLogout, onOpenPcd 
     event.preventDefault()
     if (form.name.trim().length < 3) return toast.error('Informe seu nome completo.')
     if (form.phone && !validPhone(form.phone)) return toast.error('Informe um telefone com DDD válido.')
-    if (form.cpf && onlyDigits(form.cpf).length !== 11) return toast.error('O CPF deve ter 11 dígitos.')
+    if (form.cpf && !validCpf(form.cpf)) return toast.error('Informe um CPF válido, incluindo os dígitos verificadores.')
+    if (form.linkedin) {
+      try { if (!['http:', 'https:'].includes(new URL(form.linkedin).protocol)) throw new Error() }
+      catch { return toast.error('Informe o LinkedIn com URL completa iniciada por https://.') }
+    }
     try { validatePcd(pcdAnswer ? pcdAnswer === 'yes' : null, disabilityType, Boolean(pcdFile || documentPath)) }
     catch (error) { return toast.error(error.message) }
     setSaving(true)
@@ -63,7 +67,7 @@ export default function ProfileRegistration({ user, onSave, onLogout, onOpenPcd 
         <div className="space-y-1.5"><Label htmlFor="profile-email">E-mail</Label><Input id="profile-email" type="email" value={form.email} onChange={set('email')} required /></div>
         <div className="space-y-1.5"><Label htmlFor="profile-phone">Telefone / WhatsApp</Label><Input id="profile-phone" inputMode="numeric" maxLength={15} value={form.phone} onChange={(e) => setForm((current) => ({ ...current, phone: maskPhone(e.target.value) }))} placeholder="(11) 99999-9999" /></div>
       </div></Card>
-      <Card className="space-y-4 p-5"><h2 className="font-poppins font-semibold">Rede profissional</h2><div className="space-y-1.5"><Label htmlFor="profile-linkedin">LinkedIn</Label><Input id="profile-linkedin" value={form.linkedin} onChange={set('linkedin')} placeholder="linkedin.com/in/seuperfil" /></div></Card>
+      <Card className="space-y-4 p-5"><h2 className="font-poppins font-semibold">Rede profissional</h2><div className="space-y-1.5"><Label htmlFor="profile-linkedin">LinkedIn</Label><Input id="profile-linkedin" type="url" value={form.linkedin} onChange={set('linkedin')} placeholder="https://linkedin.com/in/seuperfil" /></div></Card>
       <Card className="space-y-4 p-5"><h2 className="font-poppins font-semibold">Pessoa com Deficiência (PcD)</h2><fieldset><legend className="text-sm font-medium">Você é Pessoa com Deficiência (PcD)? <span className="text-destructive">*</span></legend><div className="mt-2 flex gap-5"><label className="flex items-center gap-2 text-sm"><input type="radio" name="pcd" checked={pcdAnswer === 'yes'} onChange={() => setPcdAnswer('yes')} />Sim</label><label className="flex items-center gap-2 text-sm"><input type="radio" name="pcd" checked={pcdAnswer === 'no'} onChange={() => setPcdAnswer('no')} />Não</label></div></fieldset>
         {pcdAnswer === 'yes' && <div className="space-y-4 border-t pt-4">
           <div className="space-y-1.5"><Label htmlFor="disability-type">Qual é a sua deficiência? <span className="text-destructive">*</span></Label><Input id="disability-type" list="disability-options" value={disabilityType} onChange={(e) => setDisabilityType(e.target.value)} placeholder="Digite ou escolha uma opção" required /><datalist id="disability-options">{disabilityOptions.map((option) => <option key={option} value={option} />)}</datalist></div>

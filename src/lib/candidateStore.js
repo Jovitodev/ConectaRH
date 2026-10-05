@@ -1,6 +1,7 @@
 import { supabase } from './supabase.js'
 import { parseSalary } from './inputMasks.js'
 import { validatePcd } from './pcdRules.js'
+import { availabilityChoices } from './professionalOptions.js'
 
 const tables = {
   experiences: 'experiencias',
@@ -21,7 +22,7 @@ export async function getCandidateRecord() {
   if (authError || !user) throw new Error('Sessão expirada. Entre novamente.')
   const usuario = check(await supabase.from('usuarios').select('*').eq('auth_user_id', user.id).single())
   if (user.email && usuario.email !== user.email) {
-    check(await supabase.from('usuarios').update({ email: user.email }).eq('id', usuario.id))
+    check(await supabase.from('usuarios').update({ email: user.email }).eq('id', usuario.id).select('id').single())
     usuario.email = user.email
   }
   const candidato = check(await supabase.from('candidatos').select('*').eq('usuario_id', usuario.id).single())
@@ -31,6 +32,7 @@ export async function getCandidateRecord() {
 const months = { jan: 1, fev: 2, mar: 3, abr: 4, mai: 5, jun: 6, jul: 7, ago: 8, set: 9, out: 10, nov: 11, dez: 12 }
 function toDate(value) {
   if (!value || value === 'Presente') return null
+  if (/^\d{4}-\d{2}$/.test(value)) return `${value}-01`
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value
   const match = String(value).toLowerCase().match(/^([a-z]{3})\s+(\d{4})$/)
   return match && months[match[1]] ? `${match[2]}-${String(months[match[1]]).padStart(2, '0')}-01` : null
@@ -42,8 +44,8 @@ const mapping = {
     to: (x) => ({ cargo: x.role, empresa: x.company, modalidade: x.modality || null, data_inicio: toDate(x.period?.start || x.start), data_fim: x.current ? null : toDate(x.period?.end || x.end), atual: !!x.current, descricao: x.description || null, habilidades: x.skills || [] }),
   },
   education: {
-    from: (r) => ({ id: r.id, degree: r.curso, institution: r.instituicao || '', period: r.periodo || '' }),
-    to: (x) => ({ curso: x.degree, instituicao: x.institution || null, periodo: x.period || null }),
+    from: (r) => ({ id: r.id, degree: r.curso, institution: r.instituicao || '', period: r.periodo || '', educationLevel: r.grau || '', educationStatus: r.situacao || '', periodNumber: r.periodo_atual || '' }),
+    to: (x) => ({ curso: x.degree, instituicao: x.institution || null, periodo: x.period || null, grau: x.educationLevel || null, situacao: x.educationStatus || null, periodo_atual: x.periodNumber ? Number(x.periodNumber) : null }),
   },
   skills: {
     from: (r) => ({ id: r.id, name: r.nome, level: r.nivel || '' }),
@@ -65,6 +67,8 @@ const mapping = {
 
 export async function loadCandidateResume() {
   const { usuario, candidato } = await getCandidateRecord()
+  const { data: availabilityRows, error: availabilityError } = await supabase.from('candidato_disponibilidades').select('opcao').eq('candidato_id', candidato.id)
+  if (availabilityError) throw availabilityError
   const entries = await Promise.all(Object.entries(tables).map(async ([section, table]) => {
     const rows = check(await supabase.from(table).select('*').eq('candidato_id', candidato.id).order('id'))
     return [section, rows.map(mapping[section].from)]
@@ -77,7 +81,9 @@ export async function loadCandidateResume() {
       pcd: candidato.pcd, disabilityType: candidato.tipo_deficiencia || '',
       pcdDocumentPath: candidato.comprovante_pcd_path || null,
       title: candidato.cargo_atual || '', city: candidato.cidade || '', state: candidato.estado || '',
+      cityId: candidato.cidade_id || null, stateId: candidato.estado_id || null,
       desiredSalary: candidato.pretensao_salarial?.toString() || '', availability: candidato.disponibilidade || '',
+      availabilityOptions: availabilityRows.length ? availabilityRows.map((row) => row.opcao) : availabilityChoices.includes(candidato.disponibilidade) ? [candidato.disponibilidade] : [],
       workPreference: candidato.modalidade || '', linkedin: candidato.linkedin || '',
       portfolioUrl: candidato.portfolio || '', profileProgress: candidato.perfil_completo || 0,
     },
@@ -90,9 +96,19 @@ export async function saveResumeItem(section, item) {
   if (!table) throw new Error('Seção desconhecida.')
   const { candidato } = await getCandidateRecord()
   const payload = mapping[section].to(item)
+  const isStored = Number.isInteger(Number(item.id)) && Number(item.id) > 0
   if (section === 'experiences' && (!payload.cargo?.trim() || !payload.empresa?.trim())) throw new Error('Informe cargo e empresa.')
   if (section === 'experiences' && !payload.data_inicio) throw new Error('Informe uma data de início válida (ex.: Jan 2023).')
-  const isStored = Number.isInteger(Number(item.id)) && Number(item.id) > 0
+  if (section === 'education' && !payload.curso?.trim()) throw new Error('Informe o curso.')
+  if (section === 'education' && !isStored && (!payload.grau || !payload.situacao)) throw new Error('Selecione grau e situação da formação.')
+  if ((section === 'skills' || section === 'languages') && !payload.nome?.trim()) throw new Error('Informe o nome.')
+  if ((section === 'skills' || section === 'languages') && !payload.nivel) throw new Error('Selecione o nível.')
+  if (section === 'portfolio') {
+    if (!payload.rotulo?.trim() || !payload.url?.trim()) throw new Error('Informe nome e URL do link.')
+    try { if (!['http:', 'https:'].includes(new URL(payload.url).protocol)) throw new Error() }
+    catch { throw new Error('Informe uma URL válida iniciada por https:// ou http://.') }
+  }
+  if (section === 'certificates' && !payload.titulo?.trim()) throw new Error('Informe o título da conquista.')
   const query = isStored
     ? supabase.from(table).update(payload).eq('id', item.id).eq('candidato_id', candidato.id).select().single()
     : supabase.from(table).insert({ ...payload, candidato_id: candidato.id }).select().single()
@@ -109,23 +125,33 @@ export async function deleteResumeItem(section, id) {
 
 export async function saveProfessionalData(values) {
   const { candidato } = await getCandidateRecord()
+  if (values.stateId && !values.cityId) throw new Error('Selecione uma cidade da lista antes de salvar.')
   const salary = parseSalary(values.desiredSalary)
   check(await supabase.from('candidatos').update({
     cargo_atual: values.title || null,
     cidade: values.city || null,
     estado: values.state || null,
+    cidade_id: values.cityId || null,
+    estado_id: values.stateId || null,
     pretensao_salarial: salary,
-    disponibilidade: values.availability || null,
     modalidade: values.workPreference || null,
     portfolio: values.portfolioUrl || null,
-  }).eq('id', candidato.id))
+  }).eq('id', candidato.id).select('id').single())
+  const selected = [...new Set(values.availabilityOptions || [])]
+  const { data: stored, error: availabilityError } = await supabase.from('candidato_disponibilidades').select('opcao').eq('candidato_id', candidato.id)
+  if (availabilityError) throw availabilityError
+  const current = stored.map((row) => row.opcao)
+  const added = selected.filter((option) => !current.includes(option))
+  const removed = current.filter((option) => !selected.includes(option))
+  if (added.length) check(await supabase.from('candidato_disponibilidades').insert(added.map((opcao) => ({ candidato_id: candidato.id, opcao }))))
+  if (removed.length) check(await supabase.from('candidato_disponibilidades').delete().eq('candidato_id', candidato.id).in('opcao', removed))
 }
 
 export async function completeInitialResume() {
   const { candidato } = await getCandidateRecord()
   const areas = check(await supabase.from('candidato_areas').select('area_id').eq('candidato_id', candidato.id).limit(1))
-  if (!candidato.cargo_atual?.trim() || !candidato.cidade?.trim() || !candidato.estado?.trim() || areas.length === 0) {
-    throw new Error('Salve cargo atual, cidade, estado e ao menos uma área de interesse antes de finalizar.')
+  if (!candidato.cargo_atual?.trim() || !candidato.cidade_id || !candidato.estado_id || areas.length === 0) {
+    throw new Error('Salve cargo atual, estado, uma cidade selecionada da lista e ao menos uma área de interesse antes de finalizar.')
   }
   check(await supabase.from('candidatos').update({ perfil_completo: 100 }).eq('id', candidato.id).select('id').single())
 }

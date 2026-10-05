@@ -1,0 +1,6 @@
+export const availabilityChoices = ['Integral', 'Meio período', 'Manhã', 'Tarde', 'Noite', 'Finais de semana', 'Flexível', 'Imediata', 'A combinar', '15 dias', '30 dias']
+export const workPreferences = ['Presencial', 'Híbrido', 'Remoto', 'Indiferente']
+export const educationLevels = ['Ensino Fundamental', 'Ensino Médio', 'Ensino Técnico', 'Ensino Superior', 'Pós-graduação', 'MBA', 'Mestrado', 'Doutorado']
+export const educationStatuses = ['Completo', 'Incompleto', 'Em andamento', 'Trancado']
+export const skillLevels = ['Básico', 'Intermediário', 'Avançado', 'Especialista']
+export const languageLevels = ['Básico', 'Intermediário', 'Avançado', 'Fluente', 'Nativo']

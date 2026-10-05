@@ -27,11 +27,12 @@ export async function saveAreas(ids) {
 
 export async function loadNotifications() {
   const { candidato } = await getCandidateRecord()
-  return dataOrThrow(await supabase.from('notificacoes').select('id,titulo,mensagem,tipo,lida,created_at').eq('candidato_id', candidato.id).order('created_at', { ascending: false }))
+  return dataOrThrow(await supabase.from('notificacoes').select('id,titulo,mensagem,tipo,lida,created_at,destino').eq('candidato_id', candidato.id).eq('ativa', true).order('created_at', { ascending: false }))
 }
 
 export async function markNotificationsRead(ids) {
   if (!ids.length) return
   const { candidato } = await getCandidateRecord()
-  dataOrThrow(await supabase.from('notificacoes').update({ lida: true }).eq('candidato_id', candidato.id).in('id', ids))
+  const updated = dataOrThrow(await supabase.from('notificacoes').update({ lida: true }).eq('candidato_id', candidato.id).in('id', ids).select('id'))
+  if (updated.length !== new Set(ids).size) throw new Error('Nem todas as mensagens puderam ser marcadas como lidas.')
 }

@@ -12,7 +12,18 @@ export function maskPhone(value) {
 
 export function validPhone(value) {
   const digits = onlyDigits(value)
-  return digits.length === 10 || digits.length === 11
+  return (digits.length === 10 || digits.length === 11) && Number(digits.slice(0, 2)) >= 11 && !/^(\d)\1+$/.test(digits)
+}
+
+export function validCpf(value) {
+  const digits = onlyDigits(value)
+  if (digits.length !== 11 || /^(\d)\1+$/.test(digits)) return false
+  for (let length = 9; length <= 10; length += 1) {
+    const total = [...digits.slice(0, length)].reduce((sum, digit, index) => sum + Number(digit) * (length + 1 - index), 0)
+    const remainder = (total * 10) % 11
+    if (Number(digits[length]) !== (remainder === 10 ? 0 : remainder)) return false
+  }
+  return true
 }
 
 export function maskCpf(value) {
