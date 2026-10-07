@@ -78,7 +78,7 @@ const navSections = [
         id: 'vacancies',
         label: 'Controle de Vagas',
         icon: Briefcase,
-        badge: '7',
+        badge: null,
         children: [
           { id: 'vacancy-create', label: 'Criar Nova Vaga', icon: FilePlus2 },
           { id: 'templates', label: 'Templates de Vagas', icon: FileStack },
@@ -88,10 +88,10 @@ const navSections = [
         id: 'candidates',
         label: 'Gestão de Candidatos',
         icon: Users,
-        badge: '128',
+        badge: null,
       },
       { id: 'kanban', label: 'Fluxo de Vagas', icon: KanbanSquare },
-      { id: 'agenda', label: 'Agenda de Entrevistas', icon: CalendarClock, badge: '3' },
+      { id: 'agenda', label: 'Agenda de Entrevistas', icon: CalendarClock, badge: null },
     ],
   },
   {

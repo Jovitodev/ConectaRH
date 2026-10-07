@@ -50,7 +50,7 @@ const modelBadgeVariant = {
   Remoto: 'success',
 }
 
-export default function JobsSearch({ jobs, applications, onApply, candidateAreas = [] }) {
+export default function JobsSearch({ jobs, applications, onApply, candidateAreas = [], page = 0, total = 0, pageSize = 12, onPageChange }) {
   const [search, setSearch] = useState('')
   const [locality, setLocality] = useState({ state: '', stateId: null, city: '', cityId: null })
   const updateLocality = useCallback((patch) => setLocality((current) => ({ ...current, ...patch })), [])
@@ -86,14 +86,16 @@ export default function JobsSearch({ jobs, applications, onApply, candidateAreas
 
   const hasFilters = search || locality.state || locality.city || salaryMin || salaryMax || model !== 'all' || selectedAreas.length > 0
 
-  const quickApply = (job) => {
+  const quickApply = async (job) => {
     if (enrollmentStatus(job) !== 'aberta') return toast.error('Esta vaga está fora do período de inscrição.')
     if (isApplied(job.id)) {
       toast.info('Candidatura já realizada', { description: 'Você já está concorrendo a esta vaga.' })
       return
     }
-    if (onApply(job.id) === false) return
-    toast.success('Candidatura confirmada!', { description: `Você se candidatou a "${job.title}" na ${job.company}.` })
+    try {
+      if (await onApply(job.id) === false) return
+      toast.success('Candidatura confirmada!', { description: `Você se candidatou a "${job.title}" na ${job.company}.` })
+    } catch (error) { toast.error('Não foi possível candidatar-se: ' + error.message) }
   }
 
   return (
@@ -248,6 +250,12 @@ export default function JobsSearch({ jobs, applications, onApply, candidateAreas
           })}
         </div>
       )}
+
+      {total > pageSize && <div className="flex items-center justify-end gap-2 text-sm text-muted-foreground">
+        <span>Vagas {page * pageSize + 1}–{Math.min((page + 1) * pageSize, total)} de {total}. Os filtros atuam nesta página.</span>
+        <Button variant="outline" size="sm" disabled={page === 0} onClick={() => onPageChange?.(page - 1)}>Anterior</Button>
+        <Button variant="outline" size="sm" disabled={(page + 1) * pageSize >= total} onClick={() => onPageChange?.(page + 1)}>Próxima</Button>
+      </div>}
 
       {/* Dialog de detalhe */}
       <Dialog open={!!detailJob} onOpenChange={(o) => !o && setDetailJob(null)}>

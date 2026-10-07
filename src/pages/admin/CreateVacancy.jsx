@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { ArrowLeft, Check, Plus, Trash2, Save, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -11,13 +11,10 @@ import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { PageHeader } from '@/components/admin-ui.jsx'
-import { jobTemplates, adminJobs } from '@/data/adminData.js'
-import { readStore, writeStore, uid } from '@/lib/localStore.js'
-import { sectors } from '@/data/mockData.js'
+import { jobTemplates } from '@/data/adminData.js'
+import { createVacancy, loadCompanies, loadRecruitmentAreas } from '@/lib/recruitmentStore.js'
 import LocationFields from '@/components/LocationFields.jsx'
 import { maskSalaryInput, parseSalary } from '@/lib/inputMasks.js'
-
-const areaChoices = [...sectors.map((area) => area.label), 'Tecnologia', 'Recursos Humanos', 'Administrativo']
 
 const emptyBenefit = (i) => `Benefício ${i}`
 
@@ -28,9 +25,13 @@ const stepsMeta = [
 
 export default function CreateVacancy({ onBack, onDone }) {
   const [step, setStep] = useState(1)
+  const [companies, setCompanies] = useState([])
+  const [areaChoices, setAreaChoices] = useState([])
+  const [loadingCompanies, setLoadingCompanies] = useState(true)
+  const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({
     title: '',
-    company: 'Rede D\'Or',
+    companyId: '',
     department: 'Saúde',
     areas: [],
     applicationStart: '',
@@ -48,6 +49,11 @@ export default function CreateVacancy({ onBack, onDone }) {
     template: '',
     published: false,
   })
+
+  useEffect(() => {
+    loadCompanies().then(setCompanies).catch((error) => toast.error('Não foi possível carregar empresas: ' + error.message)).finally(() => setLoadingCompanies(false))
+    loadRecruitmentAreas().then((rows) => setAreaChoices(rows.map((area) => area.nome))).catch((error) => toast.error('Não foi possível carregar áreas: ' + error.message))
+  }, [])
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
   const setRaw = (k, v) => setForm((f) => ({ ...f, [k]: v }))
@@ -90,6 +96,7 @@ export default function CreateVacancy({ onBack, onDone }) {
   }
 
   const validateStep1 = () => {
+    if (!form.companyId) { toast.error('Selecione uma empresa cadastrada pelo Comercial.'); return false }
     if (!form.title.trim()) {
       toast.error('Informe o título da vaga.')
       return false
@@ -117,19 +124,15 @@ export default function CreateVacancy({ onBack, onDone }) {
     setStep((s) => Math.min(2, s + 1))
   }
 
-  const save = () => {
+  const save = async (draft = false) => {
     if (!validateStep1() || !validateStep2()) return
-    const saved = readStore('admin.vacancies', adminJobs)
-    const newJob = {
-      id: uid('job'), code: `VAG-${String(saved.length + 1).padStart(4, '0')}`, title: form.title, company: form.company, department: form.department,
-      location: `${form.city}, ${form.state}`, stateId: form.stateId, cityId: form.cityId, areas: form.areas, applicationStart: form.applicationStart, applicationEnd: form.applicationEnd, model: form.model, type: form.type, description: form.description, requirements: form.requirements.filter(Boolean),
-      benefits: form.benefits.filter(Boolean), pipeline: { steps: form.pipeline.filter(Boolean), totalSteps: form.pipeline.filter(Boolean).length },
-      salary: { min: parseSalary(form.salaryMin) || 0, max: parseSalary(form.salaryMax) || 0 }, status: form.published ? 'ativa' : 'rascunho', visibility: form.visibility,
-      recruiter: 'Marina Duarte', candidates: 0, openDays: 0, priority: 'normal', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-    }
-    writeStore('admin.vacancies', [newJob, ...saved])
-    toast.success(form.published ? 'Vaga publicada!' : 'Rascunho salvo!', { description: form.published ? 'A vaga agora está visível aos candidatos.' : 'A vaga foi salva como rascunho.' })
-    onDone()
+    setSaving(true)
+    try {
+      const saved = await createVacancy({ ...form, published: draft ? false : form.published, salaryMinValue: parseSalary(form.salaryMin), salaryMaxValue: parseSalary(form.salaryMax) })
+      toast.success(!draft && form.published ? 'Vaga publicada!' : 'Rascunho salvo!', { description: `Vaga ${saved.codigo} registrada no Supabase.` })
+      onDone()
+    } catch (error) { toast.error('Não foi possível salvar a vaga: ' + error.message) }
+    finally { setSaving(false) }
   }
 
   return (
@@ -174,19 +177,16 @@ export default function CreateVacancy({ onBack, onDone }) {
                 <Input id="v-title" value={form.title} onChange={set('title')} placeholder="Ex.: Enfermeiro Intensivista UTI" />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="v-company">Empresa / Cliente</Label>
-                <Select value={form.company} onValueChange={(v) => setRaw('company', v)}>
-                  <SelectTrigger id="v-company"><SelectValue /></SelectTrigger>
+                <Label htmlFor="v-company">Empresa / Cliente *</Label>
+                <Select value={form.companyId} onValueChange={(v) => setRaw('companyId', v)} disabled={loadingCompanies || companies.length === 0}>
+                  <SelectTrigger id="v-company"><SelectValue placeholder={loadingCompanies ? 'Carregando empresas...' : companies.length ? 'Selecione a empresa' : 'Aguardando cadastro pelo Comercial'} /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Rede D'Or">Rede D'Or</SelectItem>
-                    <SelectItem value="Fintech Vertex">Fintech Vertex</SelectItem>
-                    <SelectItem value="SolarEnergy">SolarEnergy</SelectItem>
-                    <SelectItem value="ModaViva Retail">ModaViva Retail</SelectItem>
-                    <SelectItem value="Expresso Brasil">Expresso Brasil</SelectItem>
-                    <SelectItem value="Grupo Serhum">Grupo Serhum</SelectItem>
+                    {companies.map((company) => <SelectItem key={company.id} value={String(company.id)}>{company.nome}</SelectItem>)}
                   </SelectContent>
                 </Select>
+                {!loadingCompanies && companies.length === 0 && <p className="text-xs text-muted-foreground">O Comercial precisa cadastrar uma empresa antes da primeira vaga real.</p>}
               </div>
+              <div className="space-y-1.5"><Label>Responsável pela vaga</Label><p className="rounded-md border bg-muted px-3 py-2 text-sm">Você (conta de colaborador conectada)</p></div>
               <div className="space-y-1.5">
                 <Label htmlFor="v-dept">Departamento</Label>
                 <Select value={form.department} onValueChange={(v) => setRaw('department', v)}>
@@ -280,7 +280,7 @@ export default function CreateVacancy({ onBack, onDone }) {
           <Card>
             <CardHeader>
               <CardTitle>Etapas do Processo</CardTitle>
-              <CardDescription>Pipeline de seleção desta vaga. Você pode carregar de um template.</CardDescription>
+                <CardDescription>Pipeline de seleção desta vaga. Os modelos abaixo são apenas sugestões locais.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-1.5">
@@ -374,7 +374,7 @@ export default function CreateVacancy({ onBack, onDone }) {
         </Button>
         <div className="flex items-center gap-2">
           {step === 2 && (
-            <Button variant="ghost" onClick={save}>
+            <Button variant="ghost" onClick={() => save(true)} disabled={saving || companies.length === 0}>
               <Save className="h-4 w-4" /> Salvar como rascunho
             </Button>
           )}
@@ -383,7 +383,7 @@ export default function CreateVacancy({ onBack, onDone }) {
               Próximo <ChevronRight className="h-4 w-4" />
             </Button>
           ) : (
-            <Button onClick={save}>
+            <Button onClick={() => save(false)} disabled={saving || companies.length === 0}>
               <Check className="h-4 w-4" /> {form.published ? 'Publicar vaga' : 'Salvar vaga'}
             </Button>
           )}

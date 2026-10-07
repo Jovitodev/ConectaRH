@@ -17,9 +17,9 @@ export async function signIn(email, password) {
   if (!data.user) {
     throw new Error('Não foi possível identificar o usuário.')
   }
-  if (data.user.app_metadata?.role === 'colaborador') {
+  if (data.user.app_metadata?.role && data.user.app_metadata.role !== 'candidato') {
     await supabase.auth.signOut()
-    throw new Error('Use o Login do Colaborador para esta conta.')
+    throw new Error('Use o Login da Equipe para esta conta.')
   }
 
   const { data: usuario, error: usuarioError } = await supabase
@@ -43,14 +43,16 @@ export async function signIn(email, password) {
   }
 }
 
-export async function signInCollaborator(email, password) {
+export async function signInStaff(email, password) {
   const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password })
   if (error || !data.user) throw new Error('E-mail ou senha inválidos.')
-  if (data.user.app_metadata?.role !== 'colaborador') {
+  const role = data.user.app_metadata?.role
+  if (role !== 'colaborador' && role !== 'comercial') {
     await supabase.auth.signOut()
-    throw new Error('Esta conta não possui acesso de colaborador.')
+    throw new Error('Esta conta não possui um perfil de equipe ativo.')
   }
-  return { id: data.user.id, name: data.user.user_metadata?.name || data.user.email, email: data.user.email, account: 'colaborador', position: 'Colaborador', role: 'Colaborador' }
+  if (role === 'comercial') return { id: data.user.id, name: data.user.user_metadata?.name || data.user.email, email: data.user.email, account: 'comercial' }
+  return { id: data.user.id, name: data.user.user_metadata?.name || data.user.email, email: data.user.email, account: 'colaborador', position: 'Recrutador', role: 'Recrutador' }
 }
 
 export async function signUpCandidate({
@@ -115,7 +117,10 @@ export async function getCurrentUser() {
     return null
   }
   if (data.user.app_metadata?.role === 'colaborador') {
-    return { id: data.user.id, name: data.user.user_metadata?.name || data.user.email, email: data.user.email, account: 'colaborador', position: 'Colaborador', role: 'Colaborador' }
+    return { id: data.user.id, name: data.user.user_metadata?.name || data.user.email, email: data.user.email, account: 'colaborador', position: 'Recrutador', role: 'Recrutador' }
+  }
+  if (data.user.app_metadata?.role === 'comercial') {
+    return { id: data.user.id, name: data.user.user_metadata?.name || data.user.email, email: data.user.email, account: 'comercial' }
   }
 
   const { data: usuario, error } = await supabase

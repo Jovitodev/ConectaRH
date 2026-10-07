@@ -15,25 +15,26 @@ import CandidateSettings from '@/pages/CandidateSettings.jsx'
 import CandidateSupport from '@/pages/CandidateSupport.jsx'
 import CandidateMessages from '@/pages/CandidateMessages.jsx'
 import CollaboratorLogin from '@/pages/CollaboratorLogin.jsx'
+import CommercialPortal from '@/pages/CommercialPortal.jsx'
 import Dashboard from '@/pages/admin/Dashboard.jsx'
 import Vacancies from '@/pages/admin/Vacancies.jsx'
 import CreateVacancy from '@/pages/admin/CreateVacancy.jsx'
 import EditVacancy from '@/pages/admin/EditVacancy.jsx'
 import Templates from '@/pages/admin/Templates.jsx'
-import CandidateBase from '@/pages/admin/CandidateBase.jsx'
-import CandidateDetail from '@/pages/admin/CandidateDetail.jsx'
+import RecruitmentCandidates from '@/pages/admin/RecruitmentCandidates.jsx'
 import Kanban from '@/pages/admin/Kanban.jsx'
 import Agenda from '@/pages/admin/Agenda.jsx'
 import Reports from '@/pages/admin/Reports.jsx'
 import Team from '@/pages/admin/Team.jsx'
 import Settings from '@/pages/admin/Settings.jsx'
-import { user as initialUser, jobs, initialApplications } from '@/data/mockData.js'
-import { readStore, writeStore, uid } from '@/lib/localStore.js'
+import { user as initialUser } from '@/data/mockData.js'
+import { readStore, writeStore } from '@/lib/localStore.js'
 import { loadCandidateResume, importLocalResumes, saveResumeItem, deleteResumeItem, saveProfessionalData, savePcdProfile, completeInitialResume } from '@/lib/candidateStore.js'
 import { uploadPcdPdf, removePcdPdf, signedPcdUrl } from '@/lib/profileFiles.js'
 import { loadAreas, loadNotifications, markNotificationsRead } from '@/lib/candidateExtras.js'
 import { syncCandidateCompleteness } from '@/lib/candidateCompleteness.js'
 import { enrollmentStatus } from '@/lib/jobSearchRules.js'
+import { RECRUITMENT_PAGE_SIZE, applyToVacancy, loadAppliedVacancyIds, loadPublicVacancies, toPublicJob } from '@/lib/recruitmentStore.js'
 
 import {
   getCurrentUser,
@@ -58,7 +59,12 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('jobs')
   const [adminView, setAdminView] = useState('dashboard')
   const [user, setUser] = useState(initialUser)
-  const [applications, setApplications] = useState(initialApplications)
+  const [realJobs, setRealJobs] = useState([])
+  const [publicPage, setPublicPage] = useState(0)
+  const [publicCount, setPublicCount] = useState(0)
+  const [appliedVacancyIds, setAppliedVacancyIds] = useState([])
+  const [applicationRevision, setApplicationRevision] = useState(0)
+  const [editingVacancyId, setEditingVacancyId] = useState(null)
   const [resume, setResume] = useState(null)
   const [resumeLoaded, setResumeLoaded] = useState(false)
   const [resumeOwner, setResumeOwner] = useState(null)
@@ -79,29 +85,33 @@ export default function App() {
       if (sessionUser) {
         setAccount(sessionUser)
         setUser(sessionUser)
-        const savedApplications = readStore(`candidate.applications.${sessionUser.id}`, null)
-        setApplications(savedApplications || [])
       }
     }).finally(() => setLoadingSession(false))
   }, [])
 
   useEffect(() => {
-    if (!account?.id || account.account === 'colaborador') return
-    writeStore(`candidate.applications.${account.id}`, applications)
-  }, [account?.id, applications])
+    let active = true
+    loadPublicVacancies(publicPage).then(({ rows, count }) => { if (active) { setRealJobs(rows.map(toPublicJob)); setPublicCount(count) } }).catch((error) => toast.error('Não foi possível carregar vagas reais: ' + error.message))
+    return () => { active = false }
+  }, [account?.id, publicPage])
 
   useEffect(() => {
-    if (!account || account.account === 'colaborador') return
+    if (account?.account !== 'candidato' || realJobs.length === 0) { setAppliedVacancyIds([]); return }
+    loadAppliedVacancyIds(realJobs.map((job) => Number(job.id.slice(3)))).then(setAppliedVacancyIds).catch((error) => toast.error('Não foi possível verificar candidaturas: ' + error.message))
+  }, [account?.id, account?.account, realJobs, applicationRevision])
+
+  useEffect(() => {
+    if (!account || account.account !== 'candidato') return
     syncCandidateCompleteness().then(loadNotifications).then(setNotificationItems).catch((error) => toast.error('Não foi possível atualizar mensagens: ' + error.message))
   }, [account?.id, user?.id, user?.profileProgress, resume])
 
   useEffect(() => {
-    if (!account || account.account === 'colaborador' || activeTab !== 'jobs') return
+    if (!account || account.account !== 'candidato' || activeTab !== 'jobs') return
     loadAreas().then(({ areas, selectedIds }) => setCandidateAreas(areas.filter((area) => selectedIds.includes(area.id)).map((area) => area.nome))).catch(console.error)
   }, [account?.id, activeTab])
 
   useEffect(() => {
-    if (!account?.id || account.account === 'colaborador') return
+    if (!account?.id || account.account !== 'candidato') return
     let cancelled = false
     setResumeLoaded(false)
     ;(async () => {
@@ -130,62 +140,32 @@ export default function App() {
   }, [account?.id])
 
   useEffect(() => {
-    if (!account || account.account === 'colaborador' || !resumeLoaded || resumeOwner !== account.id) return
+    if (!account || account.account !== 'candidato' || !resumeLoaded || resumeOwner !== account.id) return
     if (user.profileProgress === 0 && route !== '/cadastro-curriculo') navigate('/cadastro-curriculo')
     if (user.profileProgress > 0 && route === '/cadastro-curriculo') navigate('/')
   }, [account?.id, resumeLoaded, resumeOwner, user.profileProgress, route])
 
-  const applyToJob = (jobId) => {
+  const applyToJob = async (jobId) => {
     if (!account) { setPendingJobId(jobId); navigate('/login'); return false }
     if (account.account !== 'candidato' || !resumeLoaded || !resume || resumeOwner !== account.id || !Number(user.profileProgress)) {
       setPendingJobId(jobId); navigate('/cadastro-curriculo'); return false
     }
-    const already = applications.find((a) => a.jobId === jobId)
+    const already = appliedVacancyIds.includes(Number(String(jobId).slice(3)))
     if (already) return false
-    const job = jobs.find((j) => j.id === jobId)
+    const job = realJobs.find((j) => j.id === jobId)
     if (!job) return false
     if (enrollmentStatus(job) !== 'aberta') { toast.error('Esta vaga está fora do período de inscrição.'); return false }
-    const id = uid('app')
-    const application = {
-      id, jobId, resumeId: resume?.id, appliedAt: new Date().toISOString(), currentStep: 0,
-      status: 'Em andamento', interviews: [], tasks: [], documents: [],
-      history: [{ id: uid('history'), type: 'application', label: 'Candidatura enviada', date: new Date().toISOString(), description: `Candidatura enviada para ${job.title}.` }],
-    }
-    setApplications((prev) => [application, ...prev])
+    await applyToVacancy(Number(String(jobId).slice(3)))
+    setAppliedVacancyIds((current) => [...current, Number(String(jobId).slice(3))])
+    setApplicationRevision((current) => current + 1)
     return true
   }
 
   useEffect(() => {
     if (!pendingJobId || !account || account.account !== 'candidato' || !resumeLoaded || resumeOwner !== account.id || user.profileProgress === 0) return
-    const applied = applyToJob(pendingJobId)
-    if (applied) toast.success('Candidatura confirmada!')
+    applyToJob(pendingJobId).then((applied) => { if (applied) toast.success('Candidatura confirmada!') }).catch((error) => toast.error('Não foi possível candidatar-se: ' + error.message))
     setPendingJobId(null)
   }, [pendingJobId, account?.id, resumeLoaded, resumeOwner, user.profileProgress])
-
-  const jobStepsList = (jobId) => {
-    const job = jobs.find((j) => j.id === jobId)
-    return job ? job.pipeline.steps : []
-  }
-
-  const jobSteps = (jobId) => {
-    const job = jobs.find((j) => j.id === jobId)
-    return job ? job.pipeline.totalSteps : 3
-  }
-
-  const setStep = (appId, step) => {
-    setApplications((prev) => prev.map((a) => {
-      if (a.id !== appId) return a
-      const nextStep = Math.max(0, Math.min(step, jobSteps(a.jobId) - 1))
-      if (nextStep === a.currentStep) return a
-      const job = jobs.find((j) => j.id === a.jobId)
-      const stage = job?.pipeline?.steps?.[nextStep] || 'Nova etapa'
-      return { ...a, currentStep: nextStep, history: [...(a.history || []), { id: uid('history'), type: 'stage', label: `Avançou para ${stage}`, date: new Date().toISOString(), description: `A candidatura foi movida para ${stage}.` }] }
-    }))
-  }
-
-  const updateApp = (appId, updater) => {
-    setApplications((prev) => prev.map((a) => (a.id === appId ? updater(a) : a)))
-  }
 
   const handleProfileSave = async (values) => {
     let newDocumentPath = null
@@ -271,9 +251,9 @@ export default function App() {
     const current = authenticated.account === 'candidato' ? (await getCurrentUser()) || authenticated : authenticated
     setAccount(current)
     setUser(current)
-    if (current.account === 'candidato') setApplications(readStore(`candidate.applications.${current.id}`, []))
     setResumeLoaded(false)
     if (current.account === 'colaborador') navigate('/colaborador')
+    else if (current.account === 'comercial') navigate('/comercial')
     else navigate('/')
   }
 
@@ -286,6 +266,7 @@ export default function App() {
   }
 
   const isCollaborator = account?.account === 'colaborador'
+  const isCommercial = account?.account === 'comercial'
 
   if (loadingSession) return <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">Carregando sessão...</div>
 
@@ -295,10 +276,10 @@ export default function App() {
       <Toaster position="top-right" richColors />
 
       {!account ? (
-        route === '/colaborador/login' ? <CollaboratorLogin onAuthenticated={handleAuthenticated} onCandidateLogin={() => navigate('/login')} />
+        route === '/colaborador/login' || route === '/comercial/login' ? <CollaboratorLogin onAuthenticated={handleAuthenticated} onCandidateLogin={() => navigate('/login')} />
           : route === '/login' || route === '/cadastro' || route === '/cadastro-curriculo' ? <AuthScreen key={route} initialMode={route === '/cadastro' ? 'signup' : 'signin'} onAuthenticated={handleAuthenticated} onBack={() => navigate('/')} />
-            : <main className="min-h-screen bg-background"><header className="border-b bg-card"><div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-4"><div><p className="font-poppins text-xl font-bold">Conecta<span className="text-primary">RH</span></p><p className="text-xs text-muted-foreground">Encontre sua próxima oportunidade</p></div><div className="flex gap-2"><button className="rounded-md px-4 py-2 text-sm font-medium text-primary" onClick={() => navigate('/login')}>Entrar</button><button className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground" onClick={() => navigate('/cadastro')}>Criar conta</button></div></div></header><div className="mx-auto max-w-7xl space-y-6 px-4 py-8"><div><h1 className="font-poppins text-3xl font-semibold">Buscar vagas</h1><p className="text-muted-foreground">Explore oportunidades sem precisar entrar.</p></div><JobsSearch jobs={jobs} applications={[]} onApply={applyToJob} /></div></main>
-      ) : isCollaborator ? (
+            : <main className="min-h-screen bg-background"><header className="border-b bg-card"><div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-4"><div><p className="font-poppins text-xl font-bold">Conecta<span className="text-primary">RH</span></p><p className="text-xs text-muted-foreground">Encontre sua próxima oportunidade</p></div><div className="flex gap-2"><button className="rounded-md px-4 py-2 text-sm font-medium text-primary" onClick={() => navigate('/login')}>Entrar</button><button className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground" onClick={() => navigate('/cadastro')}>Criar conta</button></div></div></header><div className="mx-auto max-w-7xl space-y-6 px-4 py-8"><div><h1 className="font-poppins text-3xl font-semibold">Buscar vagas</h1><p className="text-muted-foreground">Explore oportunidades sem precisar entrar.</p></div><JobsSearch jobs={realJobs} applications={[]} onApply={applyToJob} page={publicPage} total={publicCount} pageSize={RECRUITMENT_PAGE_SIZE} onPageChange={setPublicPage} /></div></main>
+      ) : isCommercial ? <CommercialPortal user={account} onLogout={handleLogout} /> : isCollaborator ? (
         <CollaboratorShell
           user={account}
           notifications={0}
@@ -308,19 +289,18 @@ export default function App() {
           view={adminView}
           onNavigate={setAdminView}
         >
+          {['dashboard', 'templates', 'kanban', 'agenda', 'reports', 'team', 'settings'].includes(adminView) && <p className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">Esta tela contém dados e ações demonstrativos. A operação real de vagas, candidaturas e feedbacks está em Controle de Vagas e Gestão de Candidatos.</p>}
           {adminView === 'dashboard' && <Dashboard onNavigate={setAdminView} />}
-          {adminView === 'vacancies' && <Vacancies onNavigate={setAdminView} />}
+          {adminView === 'vacancies' && <Vacancies onNavigate={setAdminView} onEdit={(id) => { setEditingVacancyId(id); setAdminView('vacancy-edit') }} />}
           {adminView === 'vacancy-create' && (
             <CreateVacancy onBack={() => setAdminView('vacancies')} onDone={() => setAdminView('vacancies')} />
           )}
           {adminView === 'vacancy-edit' && (
-            <EditVacancy onBack={() => setAdminView('vacancies')} onNavigate={setAdminView} />
+            <EditVacancy vacancyId={editingVacancyId} onBack={() => setAdminView('vacancies')} onSaved={() => setAdminView('vacancies')} />
           )}
           {adminView === 'templates' && <Templates onNavigate={setAdminView} />}
-          {adminView === 'candidates' && <CandidateBase onNavigate={setAdminView} />}
-          {adminView === 'candidate-detail' && (
-            <CandidateDetail onBack={() => setAdminView('candidates')} onNavigate={setAdminView} />
-          )}
+          {adminView === 'candidates' && <RecruitmentCandidates />}
+          {adminView === 'candidate-detail' && <RecruitmentCandidates />}
           {adminView === 'kanban' && <Kanban onNavigate={setAdminView} />}
           {adminView === 'agenda' && <Agenda />}
           {adminView === 'reports' && <Reports />}
@@ -343,15 +323,9 @@ export default function App() {
           onOpenMessages={() => setActiveTab('messages')}
           onLogout={handleLogout}
         >
-          {activeTab === 'jobs' && <JobsSearch jobs={jobs} applications={applications} onApply={applyToJob} candidateAreas={candidateAreas} />}
+          {activeTab === 'jobs' && <JobsSearch jobs={realJobs} applications={appliedVacancyIds.map((id) => ({ jobId: `db-${id}` }))} onApply={applyToJob} candidateAreas={candidateAreas} page={publicPage} total={publicCount} pageSize={RECRUITMENT_PAGE_SIZE} onPageChange={setPublicPage} />}
           {activeTab === 'applications' && (
-            <Applications
-              applications={applications}
-              jobs={jobs}
-              jobStepsList={jobStepsList}
-              updateApp={updateApp}
-              setStep={setStep}
-            />
+            <Applications key={applicationRevision} />
           )}
           {activeTab === 'profile' && (resumeLoaded && resume && resumeOwner === account.id
             ? <ProfileRegistration key={user.id} user={user} onSave={handleProfileSave} onLogout={handleLogout} onOpenPcd={handleOpenPcd} />

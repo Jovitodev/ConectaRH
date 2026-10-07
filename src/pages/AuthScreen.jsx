@@ -70,7 +70,7 @@ export default function AuthScreen({ onAuthenticated, initialMode = 'signin', on
         {mode === 'signup' && <><PasswordRequirements password={form.password} /><div className="mt-3 space-y-1.5"><Label htmlFor="auth-confirm">Confirmar senha</Label><Input id="auth-confirm" autoComplete="new-password" type={showPass ? 'text' : 'password'} value={form.confirm} onChange={set('confirm')} placeholder="Repita a senha" className="h-11" /></div><label className="mt-4 flex items-start gap-2 text-xs text-muted-foreground"><Checkbox checked={form.remember} onCheckedChange={(v) => setForm((f) => ({ ...f, remember: Boolean(v) }))} /><span>Concordo com os Termos de Uso e a Política de Privacidade.</span></label></>}
         {error && <p className="mt-3 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p>}
         <Button type="submit" className="mt-5 h-11 w-full" disabled={loading}>{loading ? 'Processando...' : mode === 'signup' ? 'Criar minha conta' : 'Entrar'}</Button>
-        {mode === 'signin' && <a className="mt-5 text-center text-xs font-medium text-primary hover:underline" href="/colaborador/login">Login do Colaborador</a>}
+        {mode === 'signin' && <a className="mt-5 text-center text-xs font-medium text-primary hover:underline" href="/colaborador/login">Login da Equipe</a>}
       </form>}
     </>}
   </div></div></div>
