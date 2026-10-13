@@ -59,7 +59,7 @@ export async function loadOwnedVacancy(id) {
 export async function createVacancy(form) {
   const { data: { user }, error } = await supabase.auth.getUser()
   if (error || !user || user.app_metadata?.role !== 'colaborador') throw new Error('Entre como colaborador para criar vagas.')
-  return result(await supabase.from('vagas').insert({
+  return result(await supabase.rpc('criar_vaga_operacional', { p_vaga: {
     empresa_id: Number(form.companyId), responsavel_auth_user_id: user.id, titulo: form.title.trim(), departamento: form.department || null,
     descricao: form.description || null, cidade_id: form.cityId, estado_id: form.stateId,
     localidade_texto: `${form.city}, ${form.state}`, modalidade: form.model, contrato: form.type,
@@ -68,7 +68,7 @@ export async function createVacancy(form) {
     etapas_iniciais: form.pipeline.filter(Boolean), visibilidade: form.visibility,
     status: form.published ? 'ativa' : 'rascunho', inscricoes_inicio: form.applicationStart, inscricoes_fim: form.applicationEnd,
     publicada_em: form.published ? new Date().toISOString() : null,
-  }).select('*').single())
+  }, p_operacao: Object.fromEntries(Object.entries(form.operation || {}).map(([k,v]) => [k,v === '' ? null : v])) }).single())
 }
 
 export async function updateVacancyStatus(id, status) {

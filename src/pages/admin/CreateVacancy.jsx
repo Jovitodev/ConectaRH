@@ -16,6 +16,9 @@ import { createVacancy, loadCompanies, loadRecruitmentAreas } from '@/lib/recrui
 import LocationFields from '@/components/LocationFields.jsx'
 import { maskSalaryInput, parseSalary } from '@/lib/inputMasks.js'
 
+import { emptyOperation } from '@/lib/vacancyOperations.js'
+import { OperationFields } from './VacancyOperation.jsx'
+
 const emptyBenefit = (i) => `Benefício ${i}`
 
 const stepsMeta = [
@@ -30,6 +33,7 @@ export default function CreateVacancy({ onBack, onDone }) {
   const [loadingCompanies, setLoadingCompanies] = useState(true)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({
+    operation: emptyOperation(),
     title: '',
     companyId: '',
     department: 'Saúde',
@@ -229,7 +233,7 @@ export default function CreateVacancy({ onBack, onDone }) {
                 <Textarea id="v-desc" value={form.description} onChange={set('description')} placeholder="Descreva as responsabilidades e o contexto da vaga..." rows={4} />
               </div>
             </div>
-          </CardContent>
+          <section className="space-y-3 rounded-xl border p-4"><h3 className="font-semibold">Dados operacionais e datas previstas</h3><OperationFields compact form={form.operation} set={(k,v)=>setRaw('operation',{...form.operation,[k]:v})}/></section></CardContent>
         </Card>
       )}
 

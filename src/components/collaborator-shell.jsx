@@ -265,7 +265,7 @@ export function CollaboratorShell({ user, notifications, notificationItems = [],
         <SidebarRail />
       </Sidebar>
 
-      <SidebarInset>
+      <SidebarInset className="min-w-0">
         <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4 transition-[width,height] ease-linear group-has-[[data-collapsible=icon]]/sidebar-wrapper:h-14">
           <div className="flex items-center gap-2">
             <SidebarTrigger className="-ml-1" />
@@ -352,7 +352,7 @@ export function CollaboratorShell({ user, notifications, notificationItems = [],
           </div>
         </header>
 
-        <main className="flex flex-1 flex-col gap-4 p-4 pt-0 sm:p-6 sm:pt-0">
+        <main className="flex min-w-0 flex-1 flex-col gap-4 p-4 pt-0 sm:p-6 sm:pt-0">
           <div className="mx-auto w-full max-w-[1600px]">{children}</div>
         </main>
       </SidebarInset>

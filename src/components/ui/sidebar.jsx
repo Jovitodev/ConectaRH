@@ -135,7 +135,7 @@ function Sidebar({ side = 'left', variant = 'sidebar', collapsible = 'offcanvas'
   return (
     <div
       ref={React.useRef(null)}
-      className="group peer hidden text-sidebar-foreground md:block"
+      className="group peer relative hidden bg-sidebar text-sidebar-foreground md:block"
       data-state={state}
       data-collapsible={state === 'collapsed' ? collapsible : ''}
       data-variant={variant}
@@ -144,7 +144,7 @@ function Sidebar({ side = 'left', variant = 'sidebar', collapsible = 'offcanvas'
     >
       <div
         className={cn(
-          'relative z-10 h-svh w-[--sidebar-width] bg-sidebar transition-[width] duration-200 group-data-[collapsible=offcanvas]:w-0 group-data-[side=right]:rotate-180 group-data-[collapsible=icon]:w-[--sidebar-width-icon]',
+          'sticky top-0 z-10 h-svh w-[--sidebar-width] bg-sidebar transition-[width] duration-200 group-data-[collapsible=offcanvas]:w-0 group-data-[side=right]:rotate-180 group-data-[collapsible=icon]:w-[--sidebar-width-icon]',
           className,
         )}
       >

@@ -41,10 +41,11 @@ export async function vacancyStages(id) {
   return checked(await supabase.from('recrutamento_etapas').select('*').eq('vaga_id', id)) || []
 }
 
-export async function applicationDirectory(id, { page = 0, search = '', stage = 'todas', status = 'todos' } = {}) {
-  let query = supabase.from('candidaturas').select('*', { count: 'exact' }).eq('vaga_id', id)
+export async function applicationDirectory(id, { page = 0, search = '', stage = 'todas', status = 'todos', reason = '' } = {}) {
+  let query = supabase.from('recrutamento_candidaturas').select('*', { count: 'exact' }).eq('vaga_id', id)
   const text = searchText(search)
   if (text) query = query.or(`nome_candidato.ilike.%${text}%,email_candidato.ilike.%${text}%`)
+  if (searchText(reason)) query = query.ilike('motivo_interno', '%' + searchText(reason) + '%')
   if (stage !== 'todas') query = query.eq('etapa_atual', stage)
   if (status !== 'todos') query = query.eq('status', status)
   return paged(await range(query.order('aplicada_em', { ascending: false }).order('id', { ascending: false }), page))
