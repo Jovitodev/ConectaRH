@@ -78,6 +78,13 @@ export async function updateVacancyStatus(id, status) {
   return result(await supabase.from('vagas').update(changes).eq('id', id).eq('responsavel_auth_user_id', current.responsavel_auth_user_id).select('id,status,publicada_em').single())
 }
 
+export async function duplicateOwnedVacancy(id) {
+  const current = await loadOwnedVacancy(id)
+  const columns = ['empresa_id','responsavel_auth_user_id','departamento','descricao','cidade_id','estado_id','localidade_texto','modalidade','contrato','salario_min','salario_max','requisitos','beneficios','areas','etapas_iniciais','visibilidade','inscricoes_inicio','inscricoes_fim']
+  const payload = Object.fromEntries(columns.map((key) => [key,current[key]]))
+  return result(await supabase.from('vagas').insert({ ...payload,titulo:`${current.titulo} (cópia)`,status:'rascunho',publicada_em:null }).select('id,codigo').single())
+}
+
 export async function updateOwnedVacancy(id, form) {
   const current = await loadOwnedVacancy(id)
   const nextStatus = form.status

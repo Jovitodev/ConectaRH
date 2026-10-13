@@ -29,7 +29,7 @@ export default function LocationFields({ value, onChange, idPrefix = 'location' 
     return () => { active = false }
   }, [value.stateId, value.city, value.cityId, onChange])
   useEffect(() => {
-    if (!value.stateId || value.city.trim().length < 2 || value.cityId) { setCities([]); return }
+    if (!value.stateId || value.city.trim().length < 2 || value.cityId) { setCities([]); setSearching(false); return }
     let active = true
     setSearching(true)
     const timer = setTimeout(() => {

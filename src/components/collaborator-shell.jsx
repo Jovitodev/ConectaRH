@@ -109,6 +109,7 @@ const titles = {
   vacancies: 'Controle de Vagas',
   'vacancy-create': 'Criar Nova Vaga',
   'vacancy-edit': 'Editar Vaga',
+  'vacancy-applications': 'Candidaturas da Vaga',
   templates: 'Templates de Vagas',
   candidates: 'Gestão de Candidatos',
   'candidate-detail': 'Perfil do Candidato',
@@ -130,7 +131,7 @@ export function CollaboratorShell({ user, notifications, notificationItems = [],
 
   const isActive = (id) => {
     if (view === id) return true
-    if (view === 'vacancy-edit') return id === 'vacancies'
+    if (view === 'vacancy-edit' || view === 'vacancy-applications') return id === 'vacancies'
     if (view === 'candidate-detail') return id === 'candidates'
     return false
   }

@@ -10,7 +10,7 @@ const applicationStatus = {
   em_andamento: 'Em análise', aprovado: 'Aprovado', reprovado: 'Reprovado', contratado: 'Contratado', desistiu: 'Desistiu',
 }
 const vacancyStatus = {
-  ativa: 'Aberta', pausada: 'Pausada', encerrada: 'Encerrada', rascunho: 'Não publicada',
+  ativa: 'Aberta', pausada: 'Pausada', encerrada: 'Encerrada', cancelada: 'Cancelada', rascunho: 'Não publicada',
 }
 
 export default function Applications() {

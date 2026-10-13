@@ -22,6 +22,7 @@ import CreateVacancy from '@/pages/admin/CreateVacancy.jsx'
 import EditVacancy from '@/pages/admin/EditVacancy.jsx'
 import Templates from '@/pages/admin/Templates.jsx'
 import RecruitmentCandidates from '@/pages/admin/RecruitmentCandidates.jsx'
+import VacancyApplications from '@/pages/admin/VacancyApplications.jsx'
 import Kanban from '@/pages/admin/Kanban.jsx'
 import Agenda from '@/pages/admin/Agenda.jsx'
 import Reports from '@/pages/admin/Reports.jsx'
@@ -65,6 +66,9 @@ export default function App() {
   const [appliedVacancyIds, setAppliedVacancyIds] = useState([])
   const [applicationRevision, setApplicationRevision] = useState(0)
   const [editingVacancyId, setEditingVacancyId] = useState(null)
+  const [selectedVacancyId, setSelectedVacancyId] = useState(null)
+  const [vacancyFilter, setVacancyFilter] = useState({ filter: 'todas', status: 'todas' })
+  const [agendaDate, setAgendaDate] = useState('')
   const [resume, setResume] = useState(null)
   const [resumeLoaded, setResumeLoaded] = useState(false)
   const [resumeOwner, setResumeOwner] = useState(null)
@@ -267,6 +271,13 @@ export default function App() {
 
   const isCollaborator = account?.account === 'colaborador'
   const isCommercial = account?.account === 'comercial'
+  const openVacancyApplications = (id) => { setSelectedVacancyId(id); setAdminView('vacancy-applications') }
+  const editVacancy = (id) => { setEditingVacancyId(id); setAdminView('vacancy-edit') }
+  const navigateAdmin = (view) => {
+    if (view === 'vacancies') setVacancyFilter({ filter: 'todas', status: 'todas' })
+    if (view === 'agenda') setAgendaDate('')
+    setAdminView(view)
+  }
 
   if (loadingSession) return <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">Carregando sessão...</div>
 
@@ -287,11 +298,12 @@ export default function App() {
           onMarkNotificationsRead={() => {}}
           onLogout={handleLogout}
           view={adminView}
-          onNavigate={setAdminView}
+          onNavigate={navigateAdmin}
         >
-          {['dashboard', 'templates', 'kanban', 'agenda', 'reports', 'team', 'settings'].includes(adminView) && <p className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">Esta tela contém dados e ações demonstrativos. A operação real de vagas, candidaturas e feedbacks está em Controle de Vagas e Gestão de Candidatos.</p>}
-          {adminView === 'dashboard' && <Dashboard onNavigate={setAdminView} />}
-          {adminView === 'vacancies' && <Vacancies onNavigate={setAdminView} onEdit={(id) => { setEditingVacancyId(id); setAdminView('vacancy-edit') }} />}
+          {['templates', 'reports', 'team', 'settings'].includes(adminView) && <p className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">Esta tela contém dados e ações demonstrativos de uma funcionalidade futura.</p>}
+          {adminView === 'dashboard' && <Dashboard onNavigate={navigateAdmin} onVacancies={(filter,status) => { setVacancyFilter({filter,status});setAdminView('vacancies') }} onAgenda={(date) => {setAgendaDate(date);setAdminView('agenda')}} onOpen={openVacancyApplications} />}
+          {adminView === 'vacancies' && <Vacancies onNavigate={navigateAdmin} onEdit={editVacancy} onOpen={openVacancyApplications} filter={vacancyFilter.filter} status={vacancyFilter.status} />}
+          {adminView === 'vacancy-applications' && selectedVacancyId && <VacancyApplications key={selectedVacancyId} vacancyId={selectedVacancyId} onBack={() => setAdminView('vacancies')} />}
           {adminView === 'vacancy-create' && (
             <CreateVacancy onBack={() => setAdminView('vacancies')} onDone={() => setAdminView('vacancies')} />
           )}
@@ -299,10 +311,10 @@ export default function App() {
             <EditVacancy vacancyId={editingVacancyId} onBack={() => setAdminView('vacancies')} onSaved={() => setAdminView('vacancies')} />
           )}
           {adminView === 'templates' && <Templates onNavigate={setAdminView} />}
-          {adminView === 'candidates' && <RecruitmentCandidates />}
-          {adminView === 'candidate-detail' && <RecruitmentCandidates />}
-          {adminView === 'kanban' && <Kanban onNavigate={setAdminView} />}
-          {adminView === 'agenda' && <Agenda />}
+          {adminView === 'candidates' && <RecruitmentCandidates onEdit={editVacancy} />}
+          {adminView === 'candidate-detail' && <RecruitmentCandidates onEdit={editVacancy} />}
+          {adminView === 'kanban' && <Kanban onEdit={editVacancy} />}
+          {adminView === 'agenda' && <Agenda key={agendaDate} initialDate={agendaDate} onOpen={openVacancyApplications} />}
           {adminView === 'reports' && <Reports />}
           {adminView === 'team' && <Team />}
           {adminView === 'settings' && <Settings />}

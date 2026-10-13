@@ -1,83 +1,44 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
+import { Search, MoreHorizontal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Textarea } from '@/components/ui/textarea'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { RECRUITMENT_PAGE_SIZE, loadOwnedVacancies, loadVacancyApplications, recordFeedback, updateVacancyStatus } from '@/lib/recruitmentStore.js'
+import { Input } from '@/components/ui/input'
+import { Card } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
+import { inputClass, Pagination, QueryState } from '@/components/recruitment-ui.jsx'
+import { dateOnly, vacancyDirectory, vacancyStatuses } from '@/lib/recruitmentWorkflow.js'
+import { duplicateOwnedVacancy, updateVacancyStatus } from '@/lib/recruitmentStore.js'
 
-export default function RealVacancies({ onEdit }) {
-  const [vacancies, setVacancies] = useState([])
-  const [totalVacancies, setTotalVacancies] = useState(0)
-  const [vacancyPage, setVacancyPage] = useState(0)
-  const [selectedId, setSelectedId] = useState(null)
-  const [applications, setApplications] = useState([])
-  const [totalApplications, setTotalApplications] = useState(0)
-  const [applicationPage, setApplicationPage] = useState(0)
-  const [feedbackFilter, setFeedbackFilter] = useState('todas')
-  const [notes, setNotes] = useState({})
+export default function RealVacancies({ onEdit, onOpen, initialFilter = 'todas', initialStatus = 'todas' }) {
+  const [options, setOptions] = useState({page:0,search:'',filter:initialFilter,status:initialStatus,order:'recentes'})
+  const [data, setData] = useState({rows:[],count:0})
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [action, setAction] = useState(null)
   const [busy, setBusy] = useState(false)
-
-  const refresh = () => loadOwnedVacancies(vacancyPage, feedbackFilter).then(({ rows, count }) => { setVacancies(rows); setTotalVacancies(count) }).catch((error) => toast.error('Falha ao carregar vagas reais: ' + error.message))
-  useEffect(() => { refresh() }, [vacancyPage, feedbackFilter])
+  const [revision, setRevision] = useState(0)
+  const filter = (key,value) => setOptions((current) => ({...current,[key]:value,page:0}))
+  useEffect(() => {setOptions((current) => ({...current,page:0,filter:initialFilter,status:initialStatus}))},[initialFilter,initialStatus])
   useEffect(() => {
-    if (!selectedId) return
-    loadVacancyApplications(selectedId, applicationPage).then(({ rows, count }) => { setApplications(rows); setTotalApplications(count) }).catch((error) => toast.error('Falha ao carregar candidaturas: ' + error.message))
-  }, [selectedId, applicationPage])
-
-  const changeStatus = async (vacancy, status) => {
-    try { await updateVacancyStatus(vacancy.id, status); await refresh(); toast.success('Status atualizado') }
-    catch (error) { toast.error(error.message) }
-  }
-
-  const saveFeedback = async (app) => {
-    const observacao = notes[app.id]?.trim()
-    if (!observacao) return toast.error('Escreva uma observação antes de registrar o feedback.')
+    let active=true;setLoading(true);setError('')
+    const timer=setTimeout(() => vacancyDirectory(options).then((result) => {if(active)setData(result)}).catch((cause) => {if(active)setError(cause.message)}).finally(() => {if(active)setLoading(false)}),250)
+    return () => {active=false;clearTimeout(timer)}
+  },[options,revision])
+  const confirm = async () => {
     setBusy(true)
     try {
-      await recordFeedback(app.id, { etapa: app.etapa_atual, status: 'pendente', observacao })
-      setNotes((current) => ({ ...current, [app.id]: '' }))
-      const updated = await loadVacancyApplications(selectedId, applicationPage)
-      setApplications(updated.rows)
-      setTotalApplications(updated.count)
-      await refresh()
-      toast.success('Registro interno salvo; nenhuma mensagem foi enviada')
-    } catch (error) { toast.error(error.message) }
-    finally { setBusy(false) }
+      if(action.type==='duplicate') await duplicateOwnedVacancy(action.vacancy.id)
+      else await updateVacancyStatus(action.vacancy.id,action.type)
+      setAction(null);setRevision((current) => current+1);toast.success('Alteração salva no Supabase.')
+    } catch(cause) {toast.error(cause.message)} finally {setBusy(false)}
   }
-
-  const withoutFeedback = (vacancy) => vacancy.summary?.sem_feedback || 0
-
   return <section className="space-y-4">
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <div><h2 className="text-lg font-semibold">Vagas reais no Supabase</h2><p className="text-sm text-muted-foreground">Somente vagas atribuídas à sua conta.</p></div>
-      <Select value={feedbackFilter} onValueChange={(value) => { setVacancyPage(0); setFeedbackFilter(value) }}><SelectTrigger className="w-56"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="todas">Todas</SelectItem><SelectItem value="sem_feedback">Vagas sem feedback</SelectItem><SelectItem value="mais_80_dias">Mais de 80 dias</SelectItem></SelectContent></Select>
-    </div>
-    {vacancies.length === 0 && <p className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">Nenhuma vaga real encontrada nesta seleção.</p>}
-    <div className="grid gap-3 md:grid-cols-2">
-      {vacancies.map((vacancy) => <Card key={vacancy.id}><CardContent className="space-y-3 p-5">
-        <div><p className="text-xs text-muted-foreground">{vacancy.codigo} · {vacancy.empresas?.nome || 'Empresa indisponível'}</p><h3 className="font-semibold">{vacancy.titulo}</h3></div>
-        <p className="text-sm">{vacancy.status} · {vacancy.summary?.candidaturas || 0} candidatura(s) · {withoutFeedback(vacancy)} sem feedback</p>
-        <div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" onClick={() => { setApplicationPage(0); setSelectedId(selectedId === vacancy.id ? null : vacancy.id) }}>Ver candidaturas</Button>
-          <Button variant="outline" size="sm" onClick={() => onEdit(vacancy.id)}>Editar vaga</Button>
-          {vacancy.status === 'ativa' && <Button variant="outline" size="sm" onClick={() => changeStatus(vacancy, 'pausada')}>Pausar</Button>}
-          {vacancy.status === 'pausada' || vacancy.status === 'rascunho' ? <Button variant="outline" size="sm" onClick={() => changeStatus(vacancy, 'ativa')}>Publicar</Button> : null}
-        </div>
-      </CardContent></Card>)}
-    </div>
-    {totalVacancies > RECRUITMENT_PAGE_SIZE && <div className="flex items-center justify-end gap-2 text-sm"><span>{vacancyPage * RECRUITMENT_PAGE_SIZE + 1}–{Math.min((vacancyPage + 1) * RECRUITMENT_PAGE_SIZE, totalVacancies)} de {totalVacancies}</span><Button variant="outline" size="sm" disabled={vacancyPage === 0} onClick={() => setVacancyPage((page) => page - 1)}>Anterior</Button><Button variant="outline" size="sm" disabled={(vacancyPage + 1) * RECRUITMENT_PAGE_SIZE >= totalVacancies} onClick={() => setVacancyPage((page) => page + 1)}>Próxima</Button></div>}
-    {selectedId && <Card><CardHeader><CardTitle>Candidaturas de {vacancies.find((item) => item.id === selectedId)?.codigo}</CardTitle></CardHeader><CardContent className="space-y-4">
-      {applications.length === 0 && <p className="text-sm text-muted-foreground">Ainda não há candidaturas nesta vaga.</p>}
-      {applications.map((app) => <div key={app.id} className="space-y-3 rounded-lg border p-4">
-        <div><h4 className="font-medium">{app.nome_candidato}</h4><p className="text-sm text-muted-foreground">{app.email_candidato} · {app.cidade_candidato || ''} {app.estado_candidato || ''}</p><p className="text-sm">{app.etapa_atual} · {app.status}</p></div>
-        {app.escolaridade && <p className="text-sm">Escolaridade: {app.escolaridade}</p>}
-        {app.habilidades?.length > 0 && <p className="text-sm">Habilidades: {app.habilidades.join(', ')}</p>}
-        {app.experiencias_resumo?.map((experience, index) => <p key={index} className="text-sm">{experience.role} · {experience.company}</p>)}
-        {(app.feedbacks || []).map((feedback) => <p key={feedback.id} className="rounded bg-muted p-2 text-sm">Registro interno ({feedback.status}): {feedback.observacao}</p>)}
-        <Textarea value={notes[app.id] || ''} onChange={(event) => setNotes((current) => ({ ...current, [app.id]: event.target.value }))} placeholder="Observação interna; não envia mensagem" />
-        <Button size="sm" disabled={busy} onClick={() => saveFeedback(app)}>Salvar registro interno</Button>
-      </div>)}
-      {totalApplications > RECRUITMENT_PAGE_SIZE && <div className="flex items-center justify-end gap-2 text-sm"><span>{applicationPage * RECRUITMENT_PAGE_SIZE + 1}–{Math.min((applicationPage + 1) * RECRUITMENT_PAGE_SIZE, totalApplications)} de {totalApplications}</span><Button variant="outline" size="sm" disabled={applicationPage === 0} onClick={() => setApplicationPage((page) => page - 1)}>Anterior</Button><Button variant="outline" size="sm" disabled={(applicationPage + 1) * RECRUITMENT_PAGE_SIZE >= totalApplications} onClick={() => setApplicationPage((page) => page + 1)}>Próxima</Button></div>}
-    </CardContent></Card>}
+    <Card className="space-y-3 p-4"><div className="flex flex-col gap-3 xl:flex-row"><div className="relative flex-1"><Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" /><Input className="pl-9" aria-label="Buscar vagas" placeholder="Buscar vaga por título ou código" value={options.search} onChange={(event) => filter('search',event.target.value)} /></div><div className="grid gap-2 sm:grid-cols-3 xl:w-[590px]"><select className={inputClass} aria-label="Status da vaga" value={options.status} onChange={(event) => filter('status',event.target.value)}><option value="todas">Todos os status</option>{Object.entries(vacancyStatuses).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select><select className={inputClass} aria-label="Filtro de vagas" value={options.filter} onChange={(event) => filter('filter',event.target.value)}><option value="todas">Todas as vagas</option><option value="sem_feedback">Sem feedback enviado</option><option value="mais_80_dias">Mais de 80 dias</option></select><select className={inputClass} aria-label="Ordenar vagas" value={options.order} onChange={(event) => filter('order',event.target.value)}><option value="recentes">Publicação mais recente</option><option value="antigas">Publicação mais antiga</option><option value="titulo">Título A–Z</option></select></div></div><p className="text-xs text-muted-foreground">{data.count} vaga(s) atribuída(s) a você nesta seleção. Busca e filtros consultam todas as páginas.</p></Card>
+    <QueryState loading={loading} error={error} empty={!data.rows.length}><Card className="overflow-x-auto"><table className="w-full min-w-[960px] text-left text-sm"><thead className="bg-muted/40 text-xs text-muted-foreground"><tr><th className="p-4">Vaga e empresa</th><th className="p-4">Candidaturas</th><th className="p-4">Sem feedback enviado</th><th className="p-4">Informações</th><th className="p-4">Status</th><th className="p-4"><span className="sr-only">Ações</span></th></tr></thead><tbody className="divide-y">{data.rows.map((vacancy) => <tr key={vacancy.id} className="hover:bg-muted/20"><td className="p-4"><button className="text-left font-semibold hover:text-primary" onClick={() => onOpen(vacancy.id)}>{vacancy.titulo}</button><p className="mt-1 text-xs text-muted-foreground">{vacancy.codigo} · {vacancy.empresa_nome}</p><p className="text-xs text-muted-foreground">Responsável: você · {vacancy.localidade_texto}</p></td><td className="p-4"><Button size="sm" variant="ghost" onClick={() => onOpen(vacancy.id)}>{vacancy.candidaturas_total}</Button></td><td className="p-4">{vacancy.sem_feedback_enviado}</td><td className="space-y-1 p-4 text-xs text-muted-foreground"><p>Publicação: {dateOnly(vacancy.publicada_em)}</p><p>Inscrições: {dateOnly(vacancy.inscricoes_inicio)} a {dateOnly(vacancy.inscricoes_fim)}</p><p>{vacancy.modalidade} · {vacancy.contrato}</p></td><td className="p-4"><Badge variant={vacancy.status==='ativa' ? 'success' : 'secondary'}>{vacancyStatuses[vacancy.status]}</Badge></td><td className="p-4"><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label={`Ações de ${vacancy.codigo}`}><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={() => onOpen(vacancy.id)}>Ver candidaturas</DropdownMenuItem><DropdownMenuItem onSelect={() => onEdit(vacancy.id)}>Editar vaga</DropdownMenuItem><DropdownMenuItem onSelect={() => setAction({vacancy,type:'duplicate'})}>Duplicar como rascunho</DropdownMenuItem>{vacancy.status==='ativa' ? <DropdownMenuItem onSelect={() => setAction({vacancy,type:'pausada'})}>Pausar publicação</DropdownMenuItem> : <DropdownMenuItem onSelect={() => setAction({vacancy,type:'ativa'})}>Publicar / reativar</DropdownMenuItem>}{vacancy.status!=='cancelada' && <DropdownMenuItem onSelect={() => setAction({vacancy,type:'cancelada'})}>Cancelar vaga</DropdownMenuItem>}{vacancy.status!=='encerrada' && <DropdownMenuItem onSelect={() => setAction({vacancy,type:'encerrada'})}>Encerrar vaga</DropdownMenuItem>}</DropdownMenuContent></DropdownMenu></td></tr>)}</tbody></table></Card></QueryState>
+    <Pagination page={options.page} total={data.count} onChange={(page) => setOptions((current) => ({...current,page}))} />
+    <p className="text-xs text-muted-foreground">“Sem feedback enviado” considera candidaturas sem registro de envio. Anotações e mensagens pendentes não contam como envio.</p>
+    <Dialog open={!!action} onOpenChange={(open) => !open && !busy && setAction(null)}><DialogContent><DialogHeader><DialogTitle>{action?.type==='duplicate' ? 'Duplicar como rascunho?' : action?.type==='cancelada' ? 'Cancelar vaga?' : action?.type==='encerrada' ? 'Encerrar vaga?' : action?.type==='pausada' ? 'Pausar publicação?' : 'Publicar ou reativar vaga?'}</DialogTitle><DialogDescription>{action?.vacancy.titulo}. {action?.type==='duplicate' ? 'Cria uma nova vaga com os mesmos campos e etapas, sem candidaturas e sem data de publicação. Revise os prazos antes de publicar.' : action?.type==='encerrada' || action?.type==='pausada' || action?.type==='cancelada' ? 'A vaga deixa da busca pública. As candidaturas e seu histórico são preservados. Nenhuma mensagem será enviada.' : 'Vagas com visibilidade pública aparecerão na busca. A publicação original será preservada. O período de inscrição continua valendo.'}</DialogDescription></DialogHeader><DialogFooter><Button disabled={busy} variant="outline" onClick={() => setAction(null)}>Voltar</Button><Button disabled={busy} onClick={confirm}>{busy ? 'Salvando...' : 'Confirmar'}</Button></DialogFooter></DialogContent></Dialog>
   </section>
 }
